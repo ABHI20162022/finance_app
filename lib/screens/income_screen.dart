@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'models/finance_model.dart';
-
+import '../models/finance_model.dart';
 class IncomeScreen extends StatefulWidget {
   const IncomeScreen({super.key});
 
