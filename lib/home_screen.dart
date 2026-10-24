@@ -1,68 +1,98 @@
 import 'package:flutter/material.dart';
 import 'income_screen.dart';
-import 'expense_screen.dart';
+import 'expence_screen.dart';
 
-class AppHomeScreen extends StatelessWidget {
-  const AppHomeScreen({super.key});
+final List<Map<String, dynamic>> kMainHeadings = [
+  {
+    'title': 'Income Management',
+    'subtitle': 'Manage earnings, person balances and deposits',
+    'icon': Icons.trending_up,
+    'color': Colors.green,
+    'screen': const IncomeScreen(),
+  },
+  {
+    'title': 'Expenses Management',
+    'subtitle': 'Track expenses, sub-categories and net balance',
+    'icon': Icons.trending_down,
+    'color': Colors.red,
+    'screen': const ExpenceScreen(),
+  },
+  {
+    'title': 'Bank Accounts',
+    'subtitle': 'Manage cash and bank accounts',
+    'icon': Icons.account_balance,
+    'color': Colors.blue,
+    'screen': const IncomeScreen(),
+  },
+  {
+    'title': 'Reports & Analytics',
+    'subtitle': 'View financial summaries and date filters',
+    'icon': Icons.bar_chart,
+    'color': Colors.orange,
+    'screen': const IncomeScreen(),
+  },
+  {
+    'title': 'Categories',
+    'subtitle': 'Setup income and expense categories',
+    'icon': Icons.category,
+    'color': Colors.purple,
+    'screen': const IncomeScreen(),
+  },
+  {
+    'title': 'Settings & Backup',
+    'subtitle': 'App preferences and data management',
+    'icon': Icons.settings,
+    'color': Colors.grey,
+    'screen': const IncomeScreen(),
+  },
+];
 
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Finance Manager', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.teal[800],
+        title: const Text('Family Finance Tracker', style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.blue.shade800,
+        foregroundColor: Colors.white,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: ListView(
-          children: [
-            // INCOME CARD
-            Card(
-              elevation: 4,
+        padding: const EdgeInsets.all(12.0),
+        child: ListView.builder(
+          itemCount: kMainHeadings.length,
+          itemBuilder: (context, index) {
+            final heading = kMainHeadings[index];
+            return Card(
+              elevation: 3,
+              margin: const EdgeInsets.only(bottom: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: const CircleAvatar(
-                  backgroundColor: Colors.green,
-                  radius: 28,
-                  child: Icon(Icons.account_balance_wallet, color: Colors.white, size: 30),
+                leading: CircleAvatar(
+                  backgroundColor: (heading['color'] as MaterialColor).shade100,
+                  child: Icon(heading['icon'], color: heading['color']),
                 ),
-                title: const Text('INCOME', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
-                subtitle: const Text('Manage Income & Sources', style: TextStyle(fontSize: 13)),
-                trailing: const Icon(Icons.arrow_forward_ios),
+                title: Text(
+                  heading['title'],
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                subtitle: Text(heading['subtitle']),
+                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const IncomeScreen()),
+                    MaterialPageRoute(builder: (context) => heading['screen']),
                   );
                 },
               ),
-            ),
-            const SizedBox(height: 15),
-            // EXPENSES CARD
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(16),
-                leading: const CircleAvatar(
-                  backgroundColor: Colors.red,
-                  radius: 28,
-                  child: Icon(Icons.money_off, color: Colors.white, size: 30),
-                ),
-                title: const Text('EXPENSES', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.red)),
-                subtitle: const Text('Manage Expenses & Outgoings', style: TextStyle(fontSize: 13)),
-                trailing: const Icon(Icons.arrow_forward_ios),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    // గమనించండి: ఇక్కడ ExpenseScreen() ముందు 'const' ఉండకూడదు!
-                    MaterialPageRoute(builder: (context) => ExpenseScreen()),
-                  );
-                },
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

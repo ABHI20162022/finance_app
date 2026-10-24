@@ -1,10 +1,5 @@
 import 'package:flutter/material.dart';
-import 'models.dart';
-
-List<String> globalIncomeCategories = [];
-List<String> globalIncomePersons = [];
-Map<String, List<String>> globalPersonAccounts = {};
-Map<String, List<String>> globalIncomeSubCategories = {};
+import 'models/finance_model.dart';
 
 class IncomeScreen extends StatefulWidget {
   const IncomeScreen({super.key});
@@ -14,42 +9,12 @@ class IncomeScreen extends StatefulWidget {
 }
 
 class _IncomeScreenState extends State<IncomeScreen> {
-  // మెయిన్ స్క్రీన్ కోసం From Date మరియు To Date కంట్రోలర్స్
-  final TextEditingController _mainFromDateController = TextEditingController();
-  final TextEditingController _mainToDateController = TextEditingController();
+  final TextEditingController fromDateController = TextEditingController();
+  final TextEditingController toDateController = TextEditingController();
 
-  void _showAddDialog(String title, List<String> targetList, Function(String) onAdded) {
-    TextEditingController controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add $title'),
-        content: TextField(controller: controller, decoration: InputDecoration(hintText: 'Enter $title name'), autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              String name = controller.text.trim();
-              if (name.isNotEmpty && !targetList.contains(name)) {
-                setState(() {
-                  targetList.add(name);
-                  onAdded(name);
-                });
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _refreshScreen() => setState(() {});
-
-  DateTime? _parseCustomDate(String dateStr) {
+  DateTime? _parseDate(String text) {
     try {
-      List<String> parts = dateStr.split('-');
+      List<String> parts = text.trim().split('-');
       if (parts.length == 3) {
         int day = int.parse(parts[0]);
         int month = int.parse(parts[1]);
@@ -60,184 +25,288 @@ class _IncomeScreenState extends State<IncomeScreen> {
     return null;
   }
 
-  double _calculatePersonNetBalance(String personName, List<FinanceEntry> filteredEntries) {
-    double totalInc = filteredEntries
-        .where((e) => e.type == 'INCOME' && e.heading2 == personName)
-        .fold(0.0, (sum, item) => sum + item.amount);
+  bool _isDateInRange(String dateStr) {
+    if (fromDateController.text.trim().isEmpty && toDateController.text.trim().isEmpty) {
+      return true;
+    }
+    DateTime? entryDate = _parseDate(dateStr);
+    if (entryDate == null) return true;
 
-    double totalExp = filteredEntries
-        .where((e) => e.type == 'EXPENSE' && (e.heading2 == personName || e.heading2.contains('Paid by: $personName')))
-        .fold(0.0, (sum, item) => sum + item.amount);
+    DateTime? fDate = _parseDate(fromDateController.text);
+    DateTime? tDate = _parseDate(toDateController.text);
 
-    return totalInc - totalExp;
+    if (fDate != null) {
+      DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
+      if (entryDate.isBefore(start)) return false;
+    }
+    if (tDate != null) {
+      DateTime end = DateTime(tDate.year, tDate.month, tDate.day, 23, 59, 59);
+      if (entryDate.isAfter(end)) return false;
+    }
+    return true;
+  }
+
+  bool _isIncomeEntry(FinanceItem entry) {
+    return entry.amount > 0;
+  }
+
+  bool _isExpenseEntry(FinanceItem entry) {
+    return entry.amount < 0;
+  }
+
+  void _showIncomePersonDialog({PersonData? person}) {
+    final controller = TextEditingController(text: person?.name ?? '');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(person == null ? 'Add Income Person' : 'Edit Person'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Person Name', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                setState(() {
+                  if (person == null) {
+                    globalPersons.add(PersonData(
+                      id: DateTime.now().toString(),
+                      name: controller.text.trim(),
+                      bankAccounts: [],
+                      entries: [],
+                    ));
+                  } else {
+                    person.name = controller.text.trim();
+                  }
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showIncomeCategoryDialog({String? oldCategory, int? index}) {
+    final controller = TextEditingController(text: oldCategory ?? '');
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(oldCategory == null ? 'Add Income Category' : 'Edit Category'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(labelText: 'Category Name', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+            onPressed: () {
+              String name = controller.text.trim();
+              if (name.isNotEmpty) {
+                setState(() {
+                  if (oldCategory == null) {
+                    if (!globalIncomeCategories.contains(name)) {
+                      globalIncomeCategories.add(name);
+                    }
+                  } else if (index != null) {
+                    globalIncomeCategories[index] = name;
+                  }
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    List<FinanceEntry> allEntriesList = globalEntries;
+    double totalIncome = 0;
+    double totalExpenses = 0;
 
-    // మెయిన్ స్క్రీన్ డేట్ ఫిల్టర్ అప్లై చేయడం
-    String fromStr = _mainFromDateController.text.trim();
-    String toStr = _mainToDateController.text.trim();
-
-    List<FinanceEntry> filteredEntries = allEntriesList;
-    if (fromStr.isNotEmpty && toStr.isNotEmpty) {
-      DateTime? fromDate = _parseCustomDate(fromStr);
-      DateTime? toDate = _parseCustomDate(toStr);
-
-      if (fromDate != null && toDate != null) {
-        filteredEntries = allEntriesList.where((e) {
-          DateTime? entryDate = _parseCustomDate(e.date);
-          if (entryDate == null) return false;
-          return (entryDate.isAtSameMomentAs(fromDate) || entryDate.isAfter(fromDate)) &&
-                 (entryDate.isAtSameMomentAs(toDate) || entryDate.isBefore(toDate));
-        }).toList();
+    for (var person in globalPersons) {
+      for (var entry in person.entries) {
+        if (_isDateInRange(entry.date)) {
+          if (_isIncomeEntry(entry)) {
+            totalIncome += entry.amount;
+          } else if (_isExpenseEntry(entry)) {
+            totalExpenses += entry.amount.abs();
+          }
+        }
       }
     }
 
-    double totalIncomeAmount = filteredEntries.where((e) => e.type == 'INCOME').fold(0.0, (sum, item) => sum + item.amount);
-    double totalExpenseAmount = filteredEntries.where((e) => e.type == 'EXPENSE').fold(0.0, (sum, item) => sum + item.amount);
-    double netTotalBalance = totalIncomeAmount - totalExpenseAmount;
+    double netBalance = totalIncome - totalExpenses;
 
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Income Management', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                child: Text(
-                  'Net: ₹${netTotalBalance.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    color: netTotalBalance < 0 ? Colors.red[900] : Colors.green[800],
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.teal[800],
+          title: const Text('Income & Balance', style: TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: Colors.green.shade700,
+          foregroundColor: Colors.white,
           bottom: const TabBar(
-            indicatorColor: Colors.amber,
+            indicatorColor: Colors.white,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             tabs: [
-              Tab(icon: Icon(Icons.category), text: "Income Category"),
-              Tab(icon: Icon(Icons.person), text: "Income Person"),
+              Tab(icon: Icon(Icons.person), text: 'Income Persons'),
+              Tab(icon: Icon(Icons.category), text: 'Income Categories'),
             ],
           ),
         ),
         body: Column(
           children: [
-            // స్పష్టమైన డేట్ ఫిల్టర్ హెడర్
-            Card(
-              margin: const EdgeInsets.all(8.0),
-              elevation: 3,
-              color: Colors.teal[50],
-              child: Padding(
-                padding: const EdgeInsets.all(10.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _mainFromDateController,
-                        onChanged: (val) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'From (DD-MM-YYYY)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          fillColor: Colors.white,
-                          filled: true,
+            Container(
+              padding: const EdgeInsets.all(8),
+              color: Colors.green.shade50,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Card(
+                      color: Colors.green.shade700,
+                      elevation: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.all(10.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Total Income', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                            const SizedBox(height: 4),
+                            Text('₹${totalIncome.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: _mainToDateController,
-                        onChanged: (val) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'To (DD-MM-YYYY)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                          fillColor: Colors.white,
-                          filled: true,
+                  ),
+                  Expanded(
+                    child: Card(
+                      color: netBalance >= 0 ? Colors.blue.shade700 : Colors.red.shade700,
+                      elevation: 3,
+                      child: Padding(
+                        padding: const EdgeInsets.all(10.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Net Balance', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                            const SizedBox(height: 4),
+                            Text('₹${netBalance.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                          ],
                         ),
                       ),
                     ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              color: Colors.green.shade50,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: fromDateController,
+                      decoration: const InputDecoration(labelText: 'From (dd-mm-yyyy)', border: OutlineInputBorder(), isDense: true, fillColor: Colors.white, filled: true, contentPadding: EdgeInsets.all(8)),
+                      onChanged: (val) => setState(() {}),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: TextField(
+                      controller: toDateController,
+                      decoration: const InputDecoration(labelText: 'To (dd-mm-yyyy)', border: OutlineInputBorder(), isDense: true, fillColor: Colors.white, filled: true, contentPadding: EdgeInsets.all(8)),
+                      onChanged: (val) => setState(() {}),
+                    ),
+                  ),
+                  if (fromDateController.text.isNotEmpty || toDateController.text.isNotEmpty) ...[
                     IconButton(
-                      icon: const Icon(Icons.clear, color: Colors.teal),
+                      icon: const Icon(Icons.clear, color: Colors.green, size: 20),
                       onPressed: () {
                         setState(() {
-                          _mainFromDateController.clear();
-                          _mainToDateController.clear();
+                          fromDateController.clear();
+                          toDateController.clear();
                         });
                       },
-                      tooltip: 'Clear Filter',
-                    ),
-                  ],
-                ),
+                    )
+                  ]
+                ],
               ),
             ),
             Expanded(
               child: TabBarView(
                 children: [
-                  // TAB 1: CATEGORY
+                  // Tab 1: Income Persons
                   Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(12.0),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700], foregroundColor: Colors.white),
-                            onPressed: () => _showAddDialog('Income Category', globalIncomeCategories, (val) {
-                              globalIncomeSubCategories[val] = [];
-                            }),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add Income Category'),
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Income Persons', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            ElevatedButton.icon(
+                              onPressed: () => _showIncomePersonDialog(),
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Add Person'),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         Expanded(
-                          child: globalIncomeCategories.isEmpty
-                              ? const Center(child: Text('No categories added yet.'))
+                          child: globalPersons.isEmpty
+                              ? const Center(child: Text('No persons added yet.', textAlign: TextAlign.center))
                               : ListView.builder(
-                                  itemCount: globalIncomeCategories.length,
+                                  itemCount: globalPersons.length,
                                   itemBuilder: (context, index) {
-                                    String category = globalIncomeCategories[index];
-                                    double catTotal = filteredEntries
-                                        .where((e) => e.type == 'INCOME' && e.heading1 == category)
-                                        .fold(0.0, (sum, item) => sum + item.amount);
+                                    final person = globalPersons[index];
+                                    double personIncome = person.entries.where((e) => _isIncomeEntry(e) && _isDateInRange(e.date)).fold(0.0, (sum, e) => sum + e.amount);
 
                                     return Card(
+                                      elevation: 2,
+                                      margin: const EdgeInsets.only(bottom: 8),
                                       child: ListTile(
-                                        leading: const Icon(Icons.folder, color: Colors.teal),
-                                        title: Text(category, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        leading: const CircleAvatar(backgroundColor: Colors.green, radius: 18, child: Icon(Icons.person, color: Colors.white, size: 20)),
+                                        title: Text(person.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                        subtitle: Text('Total Inc: ₹${personIncome.toStringAsFixed(2)}\nAccounts: ${person.bankAccounts.isEmpty ? "Cash" : person.bankAccounts.join(", ")}', style: const TextStyle(fontSize: 12)),
+                                        isThreeLine: true,
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text('₹$catTotal', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
-                                            const SizedBox(width: 10),
-                                            IconButton(
-                                              icon: const Icon(Icons.delete, color: Colors.grey),
-                                              onPressed: () => setState(() {
-                                                globalIncomeCategories.removeAt(index);
-                                                globalIncomeSubCategories.remove(category);
-                                              }),
+                                            InkWell(onTap: () => _showIncomePersonDialog(person: person), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
+                                            InkWell(
+                                              onTap: () {
+                                                setState(() {
+                                                  globalPersons.removeAt(index);
+                                                });
+                                              },
+                                              child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
                                             ),
                                           ],
                                         ),
                                         onTap: () {
                                           Navigator.push(
                                             context,
-                                            MaterialPageRoute(builder: (context) => IncomeCategoryDetailScreen(categoryName: category)),
-                                          ).then((_) => _refreshScreen());
+                                            MaterialPageRoute(
+                                              builder: (context) => IncomePersonDetailScreen(
+                                                person: person,
+                                                fromDateStr: fromDateController.text,
+                                                toDateStr: toDateController.text,
+                                              ),
+                                            ),
+                                          ).then((_) => setState(() {}));
                                         },
                                       ),
                                     );
@@ -247,64 +316,74 @@ class _IncomeScreenState extends State<IncomeScreen> {
                       ],
                     ),
                   ),
-                  // TAB 2: PERSON & NET BALANCE
+
+                  // Tab 2: Income Categories
                   Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.all(12.0),
                     child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700], foregroundColor: Colors.white),
-                            onPressed: () => _showAddDialog('Income Person', globalIncomePersons, (val) {
-                              globalPersonAccounts[val] = [];
-                            }),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Add Person'),
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Income Categories', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            ElevatedButton.icon(
+                              onPressed: () => _showIncomeCategoryDialog(),
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('Add Category'),
+                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
+                            )
+                          ],
                         ),
-                        const SizedBox(height: 15),
+                        const SizedBox(height: 8),
                         Expanded(
-                          child: globalIncomePersons.isEmpty
-                              ? const Center(child: Text('No persons added yet.'))
+                          child: globalIncomeCategories.isEmpty
+                              ? const Center(child: Text('No income categories added yet.', textAlign: TextAlign.center))
                               : ListView.builder(
-                                  itemCount: globalIncomePersons.length,
+                                  itemCount: globalIncomeCategories.length,
                                   itemBuilder: (context, index) {
-                                    String person = globalIncomePersons[index];
-                                    List<String> accounts = globalPersonAccounts[person] ?? [];
-                                    double netBal = _calculatePersonNetBalance(person, filteredEntries);
+                                    final cat = globalIncomeCategories[index];
+                                    double categoryTotal = 0;
+                                    for (var p in globalPersons) {
+                                      for (var e in p.entries) {
+                                        if (e.category.startsWith(cat) && _isDateInRange(e.date) && _isIncomeEntry(e)) {
+                                          categoryTotal += e.amount;
+                                        }
+                                      }
+                                    }
 
                                     return Card(
+                                      margin: const EdgeInsets.only(bottom: 8),
                                       child: ListTile(
-                                        leading: Icon(Icons.person, color: netBal < 0 ? Colors.red : Colors.green),
-                                        title: Text(person, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                        subtitle: Text('Accounts: ${accounts.isEmpty ? "None" : accounts.join(", ")}'),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                                        leading: const CircleAvatar(backgroundColor: Colors.green, radius: 18, child: Icon(Icons.attach_money, color: Colors.white, size: 18)),
+                                        title: Text(cat, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                        subtitle: Text('Total Income: ₹${categoryTotal.toStringAsFixed(2)}', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold, fontSize: 12)),
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(
-                                              '₹${netBal.toStringAsFixed(2)}',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
-                                                color: netBal < 0 ? Colors.red : Colors.green[800],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 5),
-                                            IconButton(
-                                              icon: const Icon(Icons.delete, color: Colors.grey),
-                                              onPressed: () => setState(() {
-                                                globalIncomePersons.removeAt(index);
-                                                globalPersonAccounts.remove(person);
-                                              }),
+                                            InkWell(onTap: () => _showIncomeCategoryDialog(oldCategory: cat, index: index), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
+                                            InkWell(
+                                              onTap: () {
+                                                setState(() {
+                                                  globalIncomeCategories.removeAt(index);
+                                                });
+                                              },
+                                              child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
                                             ),
                                           ],
                                         ),
                                         onTap: () {
                                           Navigator.push(
                                             context,
-                                            MaterialPageRoute(builder: (context) => IncomePersonAccountsScreen(personName: person)),
-                                          ).then((_) => _refreshScreen());
+                                            MaterialPageRoute(
+                                              builder: (context) => IncomeCategoryDetailScreen(
+                                                categoryName: cat,
+                                                fromDateStr: fromDateController.text,
+                                                toDateStr: toDateController.text,
+                                              ),
+                                            ),
+                                          ).then((_) => setState(() {}));
                                         },
                                       ),
                                     );
@@ -315,113 +394,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
                     ),
                   ),
                 ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class IncomePersonAccountsScreen extends StatefulWidget {
-  final String personName;
-  const IncomePersonAccountsScreen({super.key, required this.personName});
-
-  @override
-  State<IncomePersonAccountsScreen> createState() => _IncomePersonAccountsScreenState();
-}
-
-class _IncomePersonAccountsScreenState extends State<IncomePersonAccountsScreen> {
-  void _addAccountDialog() {
-    TextEditingController controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add Account for ${widget.personName}'),
-        content: TextField(controller: controller, decoration: const InputDecoration(hintText: 'e.g. SBI Bank'), autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              String name = controller.text.trim();
-              if (name.isNotEmpty) {
-                setState(() {
-                  if (!globalPersonAccounts.containsKey(widget.personName)) globalPersonAccounts[widget.personName] = [];
-                  globalPersonAccounts[widget.personName]!.add(name);
-                });
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  double _calculateAccountNetBalance(String accountName) {
-    double inc = globalEntries
-        .where((e) => e.type == 'INCOME' && e.heading2 == widget.personName && e.heading3 == accountName)
-        .fold(0.0, (sum, item) => sum + item.amount);
-
-    double exp = globalEntries
-        .where((e) => e.type == 'EXPENSE' && e.heading3 == accountName && (e.heading2 == widget.personName || e.heading2.contains('Paid by: ${widget.personName}')))
-        .fold(0.0, (sum, item) => sum + item.amount);
-
-    return inc - exp;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    List<String> accountsList = globalPersonAccounts[widget.personName] ?? [];
-    return Scaffold(
-      appBar: AppBar(title: Text('${widget.personName} Accounts', style: const TextStyle(color: Colors.white)), backgroundColor: Colors.teal[800]),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700], foregroundColor: Colors.white),
-                onPressed: _addAccountDialog,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Account'),
-              ),
-            ),
-            const SizedBox(height: 15),
-            Expanded(
-              child: ListView.builder(
-                itemCount: accountsList.length,
-                itemBuilder: (context, index) {
-                  String account = accountsList[index];
-                  double accBal = _calculateAccountNetBalance(account);
-
-                  return Card(
-                    child: ListTile(
-                      title: Text(account, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Balance: ₹${accBal.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                              color: accBal < 0 ? Colors.red : Colors.green[800],
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.grey),
-                            onPressed: () => setState(() => accountsList.removeAt(index)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
               ),
             ),
           ],
@@ -433,297 +405,564 @@ class _IncomePersonAccountsScreenState extends State<IncomePersonAccountsScreen>
 
 class IncomeCategoryDetailScreen extends StatefulWidget {
   final String categoryName;
-  const IncomeCategoryDetailScreen({super.key, required this.categoryName});
+  final String? fromDateStr;
+  final String? toDateStr;
+
+  const IncomeCategoryDetailScreen({super.key, required this.categoryName, this.fromDateStr, this.toDateStr});
 
   @override
   State<IncomeCategoryDetailScreen> createState() => _IncomeCategoryDetailScreenState();
 }
 
 class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen> {
-  final TextEditingController _amountController = TextEditingController();
-  final TextEditingController _descController = TextEditingController();
-  final TextEditingController _dateController = TextEditingController();
-
-  String? _selectedPerson;
-  String? _selectedAccount;
-  String? _editingEntryId;
-
-  @override
-  void initState() {
-    super.initState();
-    _setDefaultDate();
+  DateTime? _parseDate(String text) {
+    try {
+      List<String> parts = text.trim().split('-');
+      if (parts.length == 3) {
+        int day = int.parse(parts[0]);
+        int month = int.parse(parts[1]);
+        int year = int.parse(parts[2]);
+        return DateTime(year, month, day);
+      }
+    } catch (_) {}
+    return null;
   }
 
-  void _setDefaultDate() {
-    final now = DateTime.now();
-    _dateController.text = "${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${now.year}";
+  bool _isDateInRange(String dateStr) {
+    if ((widget.fromDateStr == null || widget.fromDateStr!.trim().isEmpty) && (widget.toDateStr == null || widget.toDateStr!.trim().isEmpty)) {
+      return true;
+    }
+    DateTime? entryDate = _parseDate(dateStr);
+    if (entryDate == null) return true;
+
+    DateTime? fDate = _parseDate(widget.fromDateStr ?? '');
+    DateTime? tDate = _parseDate(widget.toDateStr ?? '');
+
+    if (fDate != null) {
+      DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
+      if (entryDate.isBefore(start)) return false;
+    }
+    if (tDate != null) {
+      DateTime end = DateTime(tDate.year, tDate.month, tDate.day, 23, 59, 59);
+      if (entryDate.isAfter(end)) return false;
+    }
+    return true;
   }
 
-  void _showAddOptionDialog(String title, List<String> targetList, Function(String) onAdded) {
-    TextEditingController controller = TextEditingController();
+  void _showAddPersonDialog(StateSetter dialogSetState, Function(String) onPersonAdded) {
+    final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Add $title'),
-        content: TextField(controller: controller, decoration: InputDecoration(hintText: 'Enter $title name'), autofocus: true),
+        title: const Text('Add Income Person'),
+        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Person Name', border: OutlineInputBorder())),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
             onPressed: () {
-              String name = controller.text.trim();
-              if (name.isNotEmpty) {
+              if (controller.text.trim().isNotEmpty) {
+                String name = controller.text.trim();
                 setState(() {
-                  if (!targetList.contains(name)) targetList.add(name);
-                  onAdded(name);
+                  globalPersons.add(PersonData(id: DateTime.now().toString(), name: name, bankAccounts: [], entries: []));
+                });
+                dialogSetState(() {
+                  onPersonAdded(name);
                 });
                 Navigator.pop(context);
               }
             },
             child: const Text('Add'),
-          ),
+          )
         ],
       ),
     );
   }
 
-  void _resetForm() {
-    setState(() {
-      _selectedPerson = null;
-      _selectedAccount = null;
-      _amountController.clear();
-      _descController.clear();
-      _setDefaultDate();
-      _editingEntryId = null;
-    });
+  void _showAddBankDialog(PersonData targetPerson, StateSetter dialogSetState, Function(String) onBankAdded) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add Bank Account for ${targetPerson.name}'),
+        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Bank Name', border: OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                String bankName = controller.text.trim();
+                setState(() {
+                  targetPerson.bankAccounts.add(bankName);
+                });
+                dialogSetState(() {
+                  onBankAdded(bankName);
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Save'),
+          )
+        ],
+      ),
+    );
   }
 
-  void _saveIncome(TabController tabController) {
-    if (_amountController.text.trim().isEmpty) return;
-    double? amount = double.tryParse(_amountController.text.trim());
-    if (amount == null || amount <= 0) return;
+  void _openEntryDialog({FinanceItem? existingItem}) {
+    String selectedPerson = existingItem?.person ?? (globalPersons.isNotEmpty ? globalPersons.first.name : '');
+    String selectedAccount = existingItem?.depositAccount ?? 'Cash';
+    String selectedCategory = existingItem?.category ?? widget.categoryName;
 
-    setState(() {
-      if (_editingEntryId != null) {
-        int index = globalEntries.indexWhere((e) => e.id == _editingEntryId);
-        if (index != -1) {
-          globalEntries[index] = FinanceEntry(
-            id: _editingEntryId!,
-            type: 'INCOME',
-            heading1: widget.categoryName,
-            heading2: _selectedPerson ?? 'None',
-            heading3: _selectedAccount ?? 'None',
-            description: _descController.text.trim(),
-            date: _dateController.text.trim(),
-            amount: amount,
-          );
-        }
-        _editingEntryId = null;
-      } else {
-        globalEntries.add(FinanceEntry(
-          id: DateTime.now().millisecondsSinceEpoch.toString(),
-          type: 'INCOME',
-          heading1: widget.categoryName,
-          heading2: _selectedPerson ?? 'None',
-          heading3: _selectedAccount ?? 'None',
-          description: _descController.text.trim(),
-          date: _dateController.text.trim(),
-          amount: amount,
-        ));
-      }
-      _resetForm();
-    });
-    tabController.animateTo(2);
+    final dateController = TextEditingController(
+      text: existingItem?.date ?? "${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}",
+    );
+    final descController = TextEditingController(text: existingItem?.description ?? '');
+    final amountController = TextEditingController(text: existingItem != null ? existingItem.amount.abs().toString() : '');
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            PersonData currentP = globalPersons.firstWhere(
+              (p) => p.name == selectedPerson,
+              orElse: () => globalPersons.isNotEmpty ? globalPersons.first : PersonData(id: '0', name: 'Default', bankAccounts: [], entries: []),
+            );
+
+            List<String> accounts = ['Cash', ...currentP.bankAccounts];
+            if (!accounts.contains(selectedAccount)) {
+              selectedAccount = 'Cash';
+            }
+
+            if (!globalIncomeCategories.contains(selectedCategory) && globalIncomeCategories.isNotEmpty) {
+              selectedCategory = globalIncomeCategories.first;
+            }
+
+            return AlertDialog(
+              title: Text(existingItem == null ? 'New Income Entry' : 'Edit Income Entry'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Income Person Row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: globalPersons.any((p) => p.name == selectedPerson) ? selectedPerson : (globalPersons.isNotEmpty ? globalPersons.first.name : null),
+                            decoration: const InputDecoration(labelText: 'Income Person', border: OutlineInputBorder()),
+                            items: globalPersons.map((p) => DropdownMenuItem(value: p.name, child: Text(p.name))).toList(),
+                            onChanged: (val) {
+                              setDialogState(() {
+                                if (val != null) {
+                                  selectedPerson = val;
+                                  selectedAccount = 'Cash';
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle, color: Colors.green),
+                          onPressed: () => _showAddPersonDialog(setDialogState, (newName) {
+                            selectedPerson = newName;
+                            selectedAccount = 'Cash';
+                          }),
+                        )
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    // Deposit Account Row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: selectedAccount,
+                            decoration: const InputDecoration(labelText: 'Deposit Account / Cash', border: OutlineInputBorder()),
+                            items: accounts.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
+                            onChanged: (val) => setDialogState(() => selectedAccount = val!),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle, color: Colors.green),
+                          onPressed: () {
+                            if (globalPersons.any((p) => p.name == selectedPerson)) {
+                              _showAddBankDialog(currentP, setDialogState, (newBank) {
+                                selectedAccount = newBank;
+                              });
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Income Category Row (పక్కనే + బటన్‌తో)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: globalIncomeCategories.contains(selectedCategory) ? selectedCategory : (globalIncomeCategories.isNotEmpty ? globalIncomeCategories.first : null),
+                            decoration: const InputDecoration(labelText: 'Income Category', border: OutlineInputBorder()),
+                            items: globalIncomeCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                            onChanged: (val) => setDialogState(() => selectedCategory = val!),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle, color: Colors.green),
+                          onPressed: () {
+                            final catController = TextEditingController();
+                            showDialog(
+                              context: context,
+                              builder: (BuildContext dialogContext) {
+                                return AlertDialog(
+                                  title: const Text('Add Income Category'),
+                                  content: TextField(
+                                    controller: catController,
+                                    decoration: const InputDecoration(labelText: 'Category Name', border: OutlineInputBorder()),
+                                  ),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+                                      onPressed: () {
+                                        String newCat = catController.text.trim();
+                                        if (newCat.isNotEmpty) {
+                                          setState(() {
+                                            if (!globalIncomeCategories.contains(newCat)) {
+                                              globalIncomeCategories.add(newCat);
+                                            }
+                                          });
+                                          setDialogState(() {
+                                            selectedCategory = newCat;
+                                          });
+                                          Navigator.pop(dialogContext);
+                                        }
+                                      },
+                                      child: const Text('Add'),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextField(controller: dateController, decoration: const InputDecoration(labelText: 'Date (dd-mm-yyyy)', border: OutlineInputBorder())),
+                    const SizedBox(height: 12),
+                    TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description (Optional)', border: OutlineInputBorder())),
+                    const SizedBox(height: 12),
+                    TextField(controller: amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder())),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    dateController.text = "${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}";
+                    descController.clear();
+                    amountController.clear();
+                  },
+                  child: const Text('Reset', style: TextStyle(color: Colors.orange)),
+                ),
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+                  onPressed: () {
+                    if (amountController.text.trim().isNotEmpty && selectedPerson.isNotEmpty && selectedCategory.isNotEmpty) {
+                      double amt = double.tryParse(amountController.text.trim()) ?? 0.0;
+                      setState(() {
+                        PersonData target = globalPersons.firstWhere((p) => p.name == selectedPerson);
+                        if (existingItem == null) {
+                          target.entries.add(
+                            FinanceItem(
+                              id: DateTime.now().toString(),
+                              title: selectedCategory,
+                              amount: amt.abs(),
+                              person: selectedPerson,
+                              category: selectedCategory,
+                              depositAccount: selectedAccount,
+                              date: dateController.text.trim(),
+                              description: descController.text.trim(),
+                            ),
+                          );
+                        } else {
+                          for (var p in globalPersons) {
+                            p.entries.removeWhere((e) => e.id == existingItem.id);
+                          }
+                          target.entries.add(
+                            FinanceItem(
+                              id: existingItem.id,
+                              title: selectedCategory,
+                              amount: amt.abs(),
+                              person: selectedPerson,
+                              category: selectedCategory,
+                              depositAccount: selectedAccount,
+                              date: dateController.text.trim(),
+                              description: descController.text.trim(),
+                            ),
+                          );
+                        }
+                      });
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Builder(
-        builder: (context) {
-          final TabController tabController = DefaultTabController.of(context);
-          List<FinanceEntry> categoryEntries = globalEntries.where((e) => e.type == 'INCOME' && e.heading1 == widget.categoryName).toList();
-          double categoryTotal = categoryEntries.fold(0.0, (sum, item) => sum + item.amount);
-          List<String> subCategories = globalIncomeSubCategories[widget.categoryName] ?? [];
-          List<String> availableAccounts = _selectedPerson != null && globalPersonAccounts.containsKey(_selectedPerson) ? globalPersonAccounts[_selectedPerson]! : [];
+    List<FinanceItem> categoryEntries = [];
+    for (var p in globalPersons) {
+      for (var e in p.entries) {
+        if (e.category.startsWith(widget.categoryName) && _isDateInRange(e.date) && e.amount > 0) {
+          categoryEntries.add(e);
+        }
+      }
+    }
 
-          return Scaffold(
-            appBar: AppBar(
-              title: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(widget.categoryName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                    child: Text('₹$categoryTotal', style: TextStyle(color: Colors.teal[800], fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.teal[800],
-              bottom: const TabBar(
-                indicatorColor: Colors.amber,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                tabs: [
-                  Tab(icon: Icon(Icons.category), text: "Sub Category"),
-                  Tab(icon: Icon(Icons.add_card), text: "New Entry"),
-                  Tab(icon: Icon(Icons.receipt_long), text: "Statements"),
-                ],
+    double categoryTotal = categoryEntries.fold(0.0, (sum, item) => sum + item.amount);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${widget.categoryName} Statement', style: const TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.green.shade700,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          children: [
+            Card(
+              elevation: 2,
+              color: Colors.green.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Total ${widget.categoryName} Income:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
+                    Text('₹${categoryTotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
+                  ],
+                ),
               ),
             ),
-            body: TabBarView(
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // TAB 1
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    children: [
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700], foregroundColor: Colors.white),
-                          onPressed: () => _showAddOptionDialog('Sub Category', globalIncomeSubCategories[widget.categoryName]!, (_) => setState(() {})),
-                          icon: const Icon(Icons.add),
-                          label: const Text('Add Sub Category'),
-                        ),
-                      ),
-                      const SizedBox(height: 15),
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: subCategories.length,
-                          itemBuilder: (context, index) => Card(
-                            child: ListTile(
-                              title: Text(subCategories[index]),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.grey),
-                                onPressed: () => setState(() => subCategories.removeAt(index)),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // TAB 2
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: ListView(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(color: Colors.teal[50], border: Border.all(color: Colors.teal.shade300), borderRadius: BorderRadius.circular(8)),
-                        child: Text('Selected Category: ${widget.categoryName}', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.teal[800])),
-                      ),
-                      const SizedBox(height: 15),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedPerson,
-                              decoration: const InputDecoration(labelText: "Person Name *", border: OutlineInputBorder()),
-                              items: globalIncomePersons.map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-                              onChanged: (val) => setState(() { _selectedPerson = val; _selectedAccount = null; }),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.add_circle, color: Colors.teal, size: 36),
-                            onPressed: () => _showAddOptionDialog('Person', globalIncomePersons, (val) {
-                              if (!globalPersonAccounts.containsKey(val)) globalPersonAccounts[val] = [];
-                              setState(() => _selectedPerson = val);
-                            }),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedAccount,
-                              decoration: const InputDecoration(labelText: 'Deposited Account *', border: OutlineInputBorder()),
-                              items: availableAccounts.map((acc) => DropdownMenuItem(value: acc, child: Text(acc))).toList(),
-                              onChanged: (val) => setState(() => _selectedAccount = val),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.add_circle, color: Colors.teal, size: 36),
-                            onPressed: () {
-                              if (_selectedPerson == null) return;
-                              if (!globalPersonAccounts.containsKey(_selectedPerson)) globalPersonAccounts[_selectedPerson!] = [];
-                              _showAddOptionDialog('Account', globalPersonAccounts[_selectedPerson!]!, (val) => setState(() => _selectedAccount = val));
-                            },
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(controller: _descController, decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder())),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _dateController,
-                        decoration: const InputDecoration(
-                          labelText: 'Date (DD-MM-YYYY) *',
-                          hintText: 'e.g. 18-10-2026',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(controller: _amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount (₹) *', border: OutlineInputBorder())),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.teal[700], foregroundColor: Colors.white),
-                        onPressed: () => _saveIncome(tabController),
-                        child: Text(_editingEntryId == null ? 'Save' : 'Update'),
-                      ),
-                    ],
-                  ),
-                ),
-                // TAB 3
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: ListView.builder(
-                    itemCount: categoryEntries.length,
-                    itemBuilder: (context, index) {
-                      final item = categoryEntries[index];
-                      return Card(
-                        child: ListTile(
-                          title: Text('₹${item.amount}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
-                          subtitle: Text('Person: ${item.heading2} | Account: ${item.heading3}\nDate: ${item.date}'),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.blue),
-                                onPressed: () {
-                                  setState(() {
-                                    _editingEntryId = item.id;
-                                    _selectedPerson = item.heading2;
-                                    _selectedAccount = item.heading3;
-                                    _amountController.text = item.amount.toString();
-                                    _descController.text = item.description;
-                                    _dateController.text = item.date;
-                                  });
-                                  tabController.animateTo(1);
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.grey),
-                                onPressed: () => setState(() => globalEntries.remove(item)),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                ElevatedButton.icon(
+                  onPressed: () => _openEntryDialog(),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('New Income'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6)),
                 ),
               ],
             ),
-          );
-        },
+            const SizedBox(height: 8),
+            Expanded(
+              child: categoryEntries.isEmpty
+                  ? const Center(child: Text('No entries found for this category.'))
+                  : ListView.builder(
+                      itemCount: categoryEntries.length,
+                      itemBuilder: (context, index) {
+                        final entry = categoryEntries[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                            leading: const CircleAvatar(backgroundColor: Colors.green, radius: 18, child: Icon(Icons.attach_money, color: Colors.white, size: 18)),
+                            title: Text('${entry.person} - ₹${entry.amount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Text('Acc: ${entry.depositAccount} | Date: ${entry.date}${entry.description.isNotEmpty ? '\nNote: ${entry.description}' : ''}', style: const TextStyle(fontSize: 12)),
+                            isThreeLine: true,
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                InkWell(onTap: () => _openEntryDialog(existingItem: entry), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
+                                InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      for (var p in globalPersons) {
+                                        p.entries.removeWhere((e) => e.id == entry.id);
+                                      }
+                                    });
+                                  },
+                                  child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class IncomePersonDetailScreen extends StatefulWidget {
+  final PersonData person;
+  final String? fromDateStr;
+  final String? toDateStr;
+
+  const IncomePersonDetailScreen({super.key, required this.person, this.fromDateStr, this.toDateStr});
+
+  @override
+  State<IncomePersonDetailScreen> createState() => _IncomePersonDetailScreenState();
+}
+
+class _IncomePersonDetailScreenState extends State<IncomePersonDetailScreen> {
+  DateTime? _parseDate(String text) {
+    try {
+      List<String> parts = text.trim().split('-');
+      if (parts.length == 3) {
+        int day = int.parse(parts[0]);
+        int month = int.parse(parts[1]);
+        int year = int.parse(parts[2]);
+        return DateTime(year, month, day);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  bool _isDateInRange(String dateStr) {
+    if ((widget.fromDateStr == null || widget.fromDateStr!.trim().isEmpty) && (widget.toDateStr == null || widget.toDateStr!.trim().isEmpty)) {
+      return true;
+    }
+    DateTime? entryDate = _parseDate(dateStr);
+    if (entryDate == null) return true;
+
+    DateTime? fDate = _parseDate(widget.fromDateStr ?? '');
+    DateTime? tDate = _parseDate(widget.toDateStr ?? '');
+
+    if (fDate != null) {
+      DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
+      if (entryDate.isBefore(start)) return false;
+    }
+    if (tDate != null) {
+      DateTime end = DateTime(tDate.year, tDate.month, tDate.day, 23, 59, 59);
+      if (entryDate.isAfter(end)) return false;
+    }
+    return true;
+  }
+
+  void _showAddBankDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add Bank Account for ${widget.person.name}'),
+        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Bank Name', border: OutlineInputBorder())),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                setState(() {
+                  widget.person.bankAccounts.add(controller.text.trim());
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('Save'),
+          )
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayIncomeEntries = widget.person.entries.where((e) => e.amount > 0 && _isDateInRange(e.date)).toList();
+    double personTotalIncome = displayIncomeEntries.fold(0.0, (sum, item) => sum + item.amount);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${widget.person.name}\'s Income', style: const TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.green.shade700,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Card(
+              elevation: 3,
+              color: Colors.green.shade50,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              child: Padding(
+                padding: const EdgeInsets.all(12.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Total Income (${widget.person.name}):', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
+                    Text('₹${personTotalIncome.toStringAsFixed(2)}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green.shade800)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(child: Text('Bank Accounts: ${widget.person.bankAccounts.isEmpty ? "Cash Only" : widget.person.bankAccounts.join(", ")}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12), overflow: TextOverflow.ellipsis)),
+                ElevatedButton.icon(
+                  onPressed: _showAddBankDialog,
+                  icon: const Icon(Icons.account_balance, size: 14),
+                  label: const Text('Add Bank', style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text('All Income Entries', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Expanded(
+              child: displayIncomeEntries.isEmpty
+                  ? const Center(child: Text('No income entries found.'))
+                  : ListView.builder(
+                      itemCount: displayIncomeEntries.length,
+                      itemBuilder: (context, index) {
+                        final entry = displayIncomeEntries[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                            leading: const CircleAvatar(backgroundColor: Colors.green, radius: 18, child: Icon(Icons.attach_money, color: Colors.white, size: 18)),
+                            title: Text('${entry.category} - ₹${entry.amount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Text('Account: ${entry.depositAccount} | Date: ${entry.date}${entry.description.isNotEmpty ? '\nNote: ${entry.description}' : ''}', style: const TextStyle(fontSize: 12)),
+                            trailing: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  widget.person.entries.removeWhere((e) => e.id == entry.id);
+                                });
+                              },
+                              child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, color: Colors.red, size: 20)),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
