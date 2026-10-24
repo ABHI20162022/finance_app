@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'income_screen.dart';
-import 'expence_screen.dart';
+import 'screens/expence_screen.dart';
 
 final List<Map<String, dynamic>> kMainHeadings = [
   {

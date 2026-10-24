@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'models/finance_model.dart';
+import '../models/finance_model.dart';
 
 class ExpenceScreen extends StatefulWidget {
   const ExpenceScreen({super.key});
