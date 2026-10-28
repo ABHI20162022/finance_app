@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/finance_model.dart';
 
 class ExpenceScreen extends StatefulWidget {
@@ -11,6 +13,89 @@ class ExpenceScreen extends StatefulWidget {
 class _ExpenceScreenState extends State<ExpenceScreen> {
   final TextEditingController fromDateController = TextEditingController();
   final TextEditingController toDateController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDataAndRefresh();
+  }
+
+  // Local Storage నుండి డేటా లోడ్ చేయడానికి
+  Future<void> _loadDataAndRefresh() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // 1. Persons & Entries Load చేయడం
+    String? personsStr = prefs.getString('saved_global_persons');
+    if (personsStr != null) {
+      List<dynamic> decodedPersons = jsonDecode(personsStr);
+      globalPersons = decodedPersons.map((pMap) {
+        var entriesList = (pMap['entries'] as List? ?? []).map((eMap) => FinanceItem(
+          id: eMap['id'],
+          title: eMap['title'],
+          amount: (eMap['amount'] as num).toDouble(),
+          person: eMap['person'],
+          category: eMap['category'],
+          depositAccount: eMap['depositAccount'],
+          date: eMap['date'],
+          description: eMap['description'] ?? '',
+        )).toList();
+
+        var banksList = List<String>.from(pMap['bankAccounts'] ?? []);
+
+        return PersonData(
+          id: pMap['id'],
+          name: pMap['name'],
+          bankAccounts: banksList,
+          entries: entriesList,
+        );
+      }).toList();
+    }
+
+    // 2. Expense Categories Load చేయడం
+    String? categoriesStr = prefs.getString('saved_expense_categories');
+    if (categoriesStr != null) {
+      List<dynamic> decodedCats = jsonDecode(categoriesStr);
+      globalExpenseCategories = decodedCats.map((cMap) {
+        return ExpenseCategoryData(
+          name: cMap['name'],
+          subCategories: List<String>.from(cMap['subCategories'] ?? []),
+        );
+      }).toList();
+    }
+
+    setState(() {});
+  }
+
+  // ఫోన్‌లో డేటాను పర్మినెంట్‌గా సేవ్ చేయడానికి
+  Future<void> _saveDataToPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Persons & Entries Mapping
+    List<Map<String, dynamic>> personsData = globalPersons.map((p) => {
+      'id': p.id,
+      'name': p.name,
+      'bankAccounts': p.bankAccounts,
+      'entries': p.entries.map((e) => {
+        'id': e.id,
+        'title': e.title,
+        'amount': e.amount,
+        'person': e.person,
+        'category': e.category,
+        'depositAccount': e.depositAccount,
+        'date': e.date,
+        'description': e.description,
+      }).toList(),
+    }).toList();
+
+    // Categories Mapping
+    List<Map<String, dynamic>> categoriesData = globalExpenseCategories.map((c) => {
+      'name': c.name,
+      'subCategories': c.subCategories,
+    }).toList();
+
+    await prefs.setString('saved_global_persons', jsonEncode(personsData));
+    await prefs.setString('saved_expense_categories', jsonEncode(categoriesData));
+  }
 
   DateTime? _parseDate(String text) {
     try {
@@ -31,10 +116,8 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
     }
     DateTime? entryDate = _parseDate(dateStr);
     if (entryDate == null) return true;
-
     DateTime? fDate = _parseDate(fromDateController.text);
     DateTime? tDate = _parseDate(toDateController.text);
-
     if (fDate != null) {
       DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
       if (entryDate.isBefore(start)) return false;
@@ -68,7 +151,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-            onPressed: () {
+            onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
                 setState(() {
                   if (person == null) {
@@ -82,6 +165,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                     person.name = controller.text.trim();
                   }
                 });
+                await _saveDataToPrefs(); // డేటా సేవ్ అవ్వడానికి
                 Navigator.pop(context);
               }
             },
@@ -106,7 +190,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-            onPressed: () {
+            onPressed: () async {
               String name = controller.text.trim();
               if (name.isNotEmpty) {
                 setState(() {
@@ -118,6 +202,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                     globalExpenseCategories[index].name = name;
                   }
                 });
+                await _saveDataToPrefs(); // డేటా సేవ్ అవ్వడానికి
                 Navigator.pop(context);
               }
             },
@@ -132,7 +217,6 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   Widget build(BuildContext context) {
     double totalExpenses = 0;
     double totalIncome = 0;
-
     for (var person in globalPersons) {
       for (var entry in person.entries) {
         if (_isDateInRange(entry.date)) {
@@ -144,9 +228,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
         }
       }
     }
-
     double netBalance = totalIncome - totalExpenses;
-
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -272,7 +354,6 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                   itemBuilder: (context, index) {
                                     final person = globalPersons[index];
                                     double personExpense = person.entries.where((e) => _isExpenseEntry(e) && _isDateInRange(e.date)).fold(0.0, (sum, e) => sum + e.amount.abs());
-
                                     return Card(
                                       elevation: 2,
                                       margin: const EdgeInsets.only(bottom: 8),
@@ -287,10 +368,11 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                           children: [
                                             InkWell(onTap: () => _showExpensePersonDialog(person: person), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
                                             InkWell(
-                                              onTap: () {
+                                              onTap: () async {
                                                 setState(() {
                                                   globalPersons.removeAt(index);
                                                 });
+                                                await _saveDataToPrefs();
                                               },
                                               child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
                                             ),
@@ -306,7 +388,10 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                                 toDateStr: toDateController.text,
                                               ),
                                             ),
-                                          ).then((_) => setState(() {}));
+                                          ).then((_) async {
+                                            await _saveDataToPrefs();
+                                            setState(() {});
+                                          });
                                         },
                                       ),
                                     );
@@ -316,7 +401,6 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                       ],
                     ),
                   ),
-
                   // Tab 2: Expense Categories
                   Padding(
                     padding: const EdgeInsets.all(12.0),
@@ -351,7 +435,6 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                         }
                                       }
                                     }
-
                                     return Card(
                                       margin: const EdgeInsets.only(bottom: 8),
                                       child: ListTile(
@@ -364,10 +447,11 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                           children: [
                                             InkWell(onTap: () => _showExpenseCategoryDialog(oldCategory: cat, index: index), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
                                             InkWell(
-                                              onTap: () {
+                                              onTap: () async {
                                                 setState(() {
                                                   globalExpenseCategories.removeAt(index);
                                                 });
+                                                await _saveDataToPrefs();
                                               },
                                               child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
                                             ),
@@ -383,7 +467,10 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                                 toDateStr: toDateController.text,
                                               ),
                                             ),
-                                          ).then((_) => setState(() {}));
+                                          ).then((_) async {
+                                            await _saveDataToPrefs();
+                                            setState(() {});
+                                          });
                                         },
                                       ),
                                     );
@@ -407,14 +494,39 @@ class ExpenseCategoryDetailScreen extends StatefulWidget {
   final ExpenseCategoryData categoryData;
   final String? fromDateStr;
   final String? toDateStr;
-
   const ExpenseCategoryDetailScreen({super.key, required this.categoryData, this.fromDateStr, this.toDateStr});
-
   @override
   State<ExpenseCategoryDetailScreen> createState() => _ExpenseCategoryDetailScreenState();
 }
 
 class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScreen> {
+  Future<void> _saveDataToPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    List<Map<String, dynamic>> personsData = globalPersons.map((p) => {
+      'id': p.id,
+      'name': p.name,
+      'bankAccounts': p.bankAccounts,
+      'entries': p.entries.map((e) => {
+        'id': e.id,
+        'title': e.title,
+        'amount': e.amount,
+        'person': e.person,
+        'category': e.category,
+        'depositAccount': e.depositAccount,
+        'date': e.date,
+        'description': e.description,
+      }).toList(),
+    }).toList();
+
+    List<Map<String, dynamic>> categoriesData = globalExpenseCategories.map((c) => {
+      'name': c.name,
+      'subCategories': c.subCategories,
+    }).toList();
+
+    await prefs.setString('saved_global_persons', jsonEncode(personsData));
+    await prefs.setString('saved_expense_categories', jsonEncode(categoriesData));
+  }
+
   DateTime? _parseDate(String text) {
     try {
       List<String> parts = text.trim().split('-');
@@ -434,10 +546,8 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
     }
     DateTime? entryDate = _parseDate(dateStr);
     if (entryDate == null) return true;
-
     DateTime? fDate = _parseDate(widget.fromDateStr ?? '');
     DateTime? tDate = _parseDate(widget.toDateStr ?? '');
-
     if (fDate != null) {
       DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
       if (entryDate.isBefore(start)) return false;
@@ -460,12 +570,13 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-            onPressed: () {
+            onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
                 String name = controller.text.trim();
                 setState(() {
                   globalPersons.add(PersonData(id: DateTime.now().toString(), name: name, bankAccounts: [], entries: []));
                 });
+                await _saveDataToPrefs();
                 dialogSetState(() {
                   onPersonAdded(name);
                 });
@@ -490,12 +601,13 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-            onPressed: () {
+            onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
                 String bankName = controller.text.trim();
                 setState(() {
                   targetPerson.bankAccounts.add(bankName);
                 });
+                await _saveDataToPrefs();
                 dialogSetState(() {
                   onBankAdded(bankName);
                 });
@@ -510,61 +622,45 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
   }
 
   void _openEntryDialog({FinanceItem? existingItem}) {
-    // 1. Expense Person (Who is this expense for)
     String selectedExpensePerson = existingItem?.person ?? (globalPersons.isNotEmpty ? globalPersons.first.name : '');
-    
-    // 2. Expense Category (Default to current category)
     String selectedCategoryName = widget.categoryData.name;
-    
-    // 3. Sub-Category
     String selectedSubCategory = 'General';
     if (existingItem != null && existingItem.category.contains(' - ')) {
       selectedSubCategory = existingItem.category.split(' - ').last;
     } else if (widget.categoryData.subCategories.isNotEmpty) {
       selectedSubCategory = widget.categoryData.subCategories.first;
     }
-
-    // 4. Who Paid (Payer)
     String selectedWhoPaid = existingItem?.person ?? (globalPersons.isNotEmpty ? globalPersons.first.name : '');
-    
-    // 5. Account / Bank from Who Paid
     String selectedAccount = existingItem?.depositAccount ?? 'Cash';
-
     final dateController = TextEditingController(
       text: existingItem?.date ?? "${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}",
     );
     final descController = TextEditingController(text: existingItem?.description ?? '');
     final amountController = TextEditingController(text: existingItem != null ? existingItem.amount.abs().toString() : '');
-
+    
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            // Get Payer object for bank accounts
             PersonData payerPerson = globalPersons.firstWhere(
               (p) => p.name == selectedWhoPaid,
               orElse: () => globalPersons.isNotEmpty ? globalPersons.first : PersonData(id: '0', name: 'Default', bankAccounts: [], entries: []),
             );
-
             List<String> accounts = ['Cash', ...payerPerson.bankAccounts];
             if (!accounts.contains(selectedAccount)) {
               selectedAccount = 'Cash';
             }
-
-            // Sub-categories list for current category
             List<String> subCats = widget.categoryData.subCategories.isEmpty ? ['General'] : widget.categoryData.subCategories;
             if (!subCats.contains(selectedSubCategory)) {
               selectedSubCategory = subCats.first;
             }
-
             return AlertDialog(
               title: Text(existingItem == null ? 'New Expense (${widget.categoryData.name})' : 'Edit Expense Entry'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // 1. Expense Person Row
                     Row(
                       children: [
                         Expanded(
@@ -588,8 +684,6 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                       ],
                     ),
                     const SizedBox(height: 12),
-
-                    // 2. Expense Category Row (Default category, non-editable or dropdown)
                     Row(
                       children: [
                         Expanded(
@@ -601,7 +695,6 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                               if (val != null) {
                                 setDialogState(() {
                                   selectedCategoryName = val;
-                                  // Update subcategories based on selected category
                                   ExpenseCategoryData catObj = globalExpenseCategories.firstWhere((c) => c.name == val, orElse: () => widget.categoryData);
                                   subCats = catObj.subCategories.isEmpty ? ['General'] : catObj.subCategories;
                                   selectedSubCategory = subCats.first;
@@ -619,15 +712,12 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                               builder: (BuildContext dialogContext) {
                                 return AlertDialog(
                                   title: const Text('Add Expense Category'),
-                                  content: TextField(
-                                    controller: catController,
-                                    decoration: const InputDecoration(labelText: 'Category Name', border: OutlineInputBorder()),
-                                  ),
+                                  content: TextField(controller: catController, decoration: const InputDecoration(labelText: 'Category Name', border: OutlineInputBorder())),
                                   actions: [
                                     TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
                                     ElevatedButton(
                                       style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-                                      onPressed: () {
+                                      onPressed: () async {
                                         String newCat = catController.text.trim();
                                         if (newCat.isNotEmpty) {
                                           setState(() {
@@ -635,6 +725,7 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                                               globalExpenseCategories.add(ExpenseCategoryData(name: newCat, subCategories: []));
                                             }
                                           });
+                                          await _saveDataToPrefs();
                                           setDialogState(() {
                                             selectedCategoryName = newCat;
                                           });
@@ -652,8 +743,6 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                       ],
                     ),
                     const SizedBox(height: 12),
-
-                    // 3. Sub-Category Row (if subcategories exist)
                     if (subCats.isNotEmpty) ...[
                       Row(
                         children: [
@@ -674,15 +763,12 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                                 builder: (BuildContext dialogContext) {
                                   return AlertDialog(
                                     title: Text('Add Sub-Category under $selectedCategoryName'),
-                                    content: TextField(
-                                      controller: subController,
-                                      decoration: const InputDecoration(labelText: 'Sub-Category Name', border: OutlineInputBorder()),
-                                    ),
+                                    content: TextField(controller: subController, decoration: const InputDecoration(labelText: 'Sub-Category Name', border: OutlineInputBorder())),
                                     actions: [
                                       TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
                                       ElevatedButton(
                                         style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-                                        onPressed: () {
+                                        onPressed: () async {
                                           String newSub = subController.text.trim();
                                           if (newSub.isNotEmpty) {
                                             setState(() {
@@ -691,6 +777,7 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                                                 catObj.subCategories.add(newSub);
                                               }
                                             });
+                                            await _saveDataToPrefs();
                                             setDialogState(() {
                                               selectedSubCategory = newSub;
                                             });
@@ -709,8 +796,6 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                       ),
                       const SizedBox(height: 12),
                     ],
-
-                    // 4. Who Paid Row
                     Row(
                       children: [
                         Expanded(
@@ -738,8 +823,6 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                       ],
                     ),
                     const SizedBox(height: 12),
-
-                    // 5. Paid From Account Row (Bank linked to Who Paid)
                     Row(
                       children: [
                         Expanded(
@@ -763,8 +846,6 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                       ],
                     ),
                     const SizedBox(height: 12),
-
-                    // 6. Date, Description, Amount
                     TextField(controller: dateController, decoration: const InputDecoration(labelText: 'Date (dd-mm-yyyy)', border: OutlineInputBorder())),
                     const SizedBox(height: 12),
                     TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description (Optional)', border: OutlineInputBorder())),
@@ -785,20 +866,19 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-                  onPressed: () {
+                  onPressed: () async {
                     if (amountController.text.trim().isNotEmpty && selectedExpensePerson.isNotEmpty) {
                       double amt = double.tryParse(amountController.text.trim()) ?? 0.0;
                       String fullCategoryName = selectedSubCategory == 'General' ? selectedCategoryName : "$selectedCategoryName - $selectedSubCategory";
                       
                       setState(() {
-                        // Expense is saved under the selected Expense Person, amount is negative (-amt.abs()) to deduct
                         PersonData target = globalPersons.firstWhere((p) => p.name == selectedExpensePerson);
                         if (existingItem == null) {
                           target.entries.add(
                             FinanceItem(
                               id: DateTime.now().toString(),
                               title: fullCategoryName,
-                              amount: -amt.abs(), // Negative value to deduct from balance
+                              amount: -amt.abs(),
                               person: selectedExpensePerson,
                               category: fullCategoryName,
                               depositAccount: selectedAccount,
@@ -824,6 +904,7 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                           );
                         }
                       });
+                      await _saveDataToPrefs();
                       Navigator.pop(context);
                     }
                   },
@@ -847,9 +928,7 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
         }
       }
     }
-
     double categoryTotal = categoryEntries.fold(0.0, (sum, item) => sum + item.amount.abs());
-
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.categoryData.name} Statement', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -880,7 +959,6 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
               children: [
                 ElevatedButton.icon(
                   onPressed: () {
-                    // Add Sub Category dialog
                     final controller = TextEditingController();
                     showDialog(
                       context: context,
@@ -891,13 +969,14 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-                            onPressed: () {
+                            onPressed: () async {
                               if (controller.text.trim().isNotEmpty) {
                                 setState(() {
                                   if (!widget.categoryData.subCategories.contains(controller.text.trim())) {
                                     widget.categoryData.subCategories.add(controller.text.trim());
                                   }
                                 });
+                                await _saveDataToPrefs();
                                 Navigator.pop(context);
                               }
                             },
@@ -940,12 +1019,13 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                               children: [
                                 InkWell(onTap: () => _openEntryDialog(existingItem: entry), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
                                 InkWell(
-                                  onTap: () {
+                                  onTap: () async {
                                     setState(() {
                                       for (var p in globalPersons) {
                                         p.entries.removeWhere((e) => e.id == entry.id);
                                       }
                                     });
+                                    await _saveDataToPrefs();
                                   },
                                   child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
                                 ),
@@ -967,14 +1047,39 @@ class ExpensePersonDetailScreen extends StatefulWidget {
   final PersonData person;
   final String? fromDateStr;
   final String? toDateStr;
-
   const ExpensePersonDetailScreen({super.key, required this.person, this.fromDateStr, this.toDateStr});
-
   @override
   State<ExpensePersonDetailScreen> createState() => _ExpensePersonDetailScreenState();
 }
 
 class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
+  Future<void> _saveDataToPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    List<Map<String, dynamic>> personsData = globalPersons.map((p) => {
+      'id': p.id,
+      'name': p.name,
+      'bankAccounts': p.bankAccounts,
+      'entries': p.entries.map((e) => {
+        'id': e.id,
+        'title': e.title,
+        'amount': e.amount,
+        'person': e.person,
+        'category': e.category,
+        'depositAccount': e.depositAccount,
+        'date': e.date,
+        'description': e.description,
+      }).toList(),
+    }).toList();
+
+    List<Map<String, dynamic>> categoriesData = globalExpenseCategories.map((c) => {
+      'name': c.name,
+      'subCategories': c.subCategories,
+    }).toList();
+
+    await prefs.setString('saved_global_persons', jsonEncode(personsData));
+    await prefs.setString('saved_expense_categories', jsonEncode(categoriesData));
+  }
+
   DateTime? _parseDate(String text) {
     try {
       List<String> parts = text.trim().split('-');
@@ -994,10 +1099,8 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
     }
     DateTime? entryDate = _parseDate(dateStr);
     if (entryDate == null) return true;
-
     DateTime? fDate = _parseDate(widget.fromDateStr ?? '');
     DateTime? tDate = _parseDate(widget.toDateStr ?? '');
-
     if (fDate != null) {
       DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
       if (entryDate.isBefore(start)) return false;
@@ -1024,11 +1127,12 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-            onPressed: () {
+            onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
                 setState(() {
                   widget.person.bankAccounts.add(controller.text.trim());
                 });
+                await _saveDataToPrefs();
                 Navigator.pop(context);
               }
             },
@@ -1042,9 +1146,7 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final displayExpenseEntries = widget.person.entries.where((e) => _isExpenseEntry(e) && _isDateInRange(e.date)).toList();
-
     double personTotalExpense = displayExpenseEntries.fold(0.0, (sum, item) => sum + item.amount.abs());
-
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.person.name}\'s Expenses', style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -1102,10 +1204,11 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
                             title: Text('${entry.category} - ₹${entry.amount.abs().toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                             subtitle: Text('Account: ${entry.depositAccount} | Date: ${entry.date}${entry.description.isNotEmpty ? '\nNote: ${entry.description}' : ''}', style: const TextStyle(fontSize: 12)),
                             trailing: InkWell(
-                              onTap: () {
+                              onTap: () async {
                                 setState(() {
                                   widget.person.entries.removeWhere((e) => e.id == entry.id);
                                 });
+                                await _saveDataToPrefs();
                               },
                               child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, color: Colors.red, size: 20)),
                             ),

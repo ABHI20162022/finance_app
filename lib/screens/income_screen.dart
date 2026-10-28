@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/finance_model.dart';
+
 class IncomeScreen extends StatefulWidget {
   const IncomeScreen({super.key});
 
@@ -10,6 +11,26 @@ class IncomeScreen extends StatefulWidget {
 class _IncomeScreenState extends State<IncomeScreen> {
   final TextEditingController fromDateController = TextEditingController();
   final TextEditingController toDateController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await loadFinanceDataFromPrefs();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _saveData() async {
+    await saveFinanceDataToPrefs();
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   DateTime? _parseDate(String text) {
     try {
@@ -30,10 +51,8 @@ class _IncomeScreenState extends State<IncomeScreen> {
     }
     DateTime? entryDate = _parseDate(dateStr);
     if (entryDate == null) return true;
-
     DateTime? fDate = _parseDate(fromDateController.text);
     DateTime? tDate = _parseDate(toDateController.text);
-
     if (fDate != null) {
       DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
       if (entryDate.isBefore(start)) return false;
@@ -45,13 +64,8 @@ class _IncomeScreenState extends State<IncomeScreen> {
     return true;
   }
 
-  bool _isIncomeEntry(FinanceItem entry) {
-    return entry.amount > 0;
-  }
-
-  bool _isExpenseEntry(FinanceItem entry) {
-    return entry.amount < 0;
-  }
+  bool _isIncomeEntry(FinanceItem entry) => entry.amount > 0;
+  bool _isExpenseEntry(FinanceItem entry) => entry.amount < 0;
 
   void _showIncomePersonDialog({PersonData? person}) {
     final controller = TextEditingController(text: person?.name ?? '');
@@ -67,21 +81,32 @@ class _IncomeScreenState extends State<IncomeScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                setState(() {
-                  if (person == null) {
-                    globalPersons.add(PersonData(
-                      id: DateTime.now().toString(),
-                      name: controller.text.trim(),
-                      bankAccounts: [],
-                      entries: [],
-                    ));
-                  } else {
-                    person.name = controller.text.trim();
-                  }
-                });
-                Navigator.pop(context);
+            onPressed: () async {
+              String name = controller.text.trim();
+              if (name.isNotEmpty) {
+                bool exists = globalPersons.any((p) => p.name.toLowerCase() == name.toLowerCase() && p != person);
+                if (exists) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('This person name already exists!'), backgroundColor: Colors.red),
+                  );
+                  return;
+                }
+
+                if (person == null) {
+                  globalPersons.add(PersonData(
+                    id: DateTime.now().toString(),
+                    name: name,
+                    bankAccounts: [],
+                    entries: [],
+                  ));
+                } else {
+                  person.name = name;
+                }
+
+                await _saveData();
+                if (mounted) {
+                  Navigator.pop(context);
+                }
               }
             },
             child: const Text('Save'),
@@ -105,19 +130,21 @@ class _IncomeScreenState extends State<IncomeScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: () {
+            onPressed: () async {
               String name = controller.text.trim();
               if (name.isNotEmpty) {
-                setState(() {
-                  if (oldCategory == null) {
-                    if (!globalIncomeCategories.contains(name)) {
-                      globalIncomeCategories.add(name);
-                    }
-                  } else if (index != null) {
-                    globalIncomeCategories[index] = name;
+                if (oldCategory == null) {
+                  if (!globalIncomeCategories.contains(name)) {
+                    globalIncomeCategories.add(name);
                   }
-                });
-                Navigator.pop(context);
+                } else if (index != null) {
+                  globalIncomeCategories[index] = name;
+                }
+
+                await _saveData();
+                if (mounted) {
+                  Navigator.pop(context);
+                }
               }
             },
             child: const Text('Save'),
@@ -131,7 +158,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
   Widget build(BuildContext context) {
     double totalIncome = 0;
     double totalExpenses = 0;
-
     for (var person in globalPersons) {
       for (var entry in person.entries) {
         if (_isDateInRange(entry.date)) {
@@ -143,7 +169,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
         }
       }
     }
-
     double netBalance = totalIncome - totalExpenses;
 
     return DefaultTabController(
@@ -271,7 +296,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
                                   itemBuilder: (context, index) {
                                     final person = globalPersons[index];
                                     double personIncome = person.entries.where((e) => _isIncomeEntry(e) && _isDateInRange(e.date)).fold(0.0, (sum, e) => sum + e.amount);
-
                                     return Card(
                                       elevation: 2,
                                       margin: const EdgeInsets.only(bottom: 8),
@@ -286,10 +310,9 @@ class _IncomeScreenState extends State<IncomeScreen> {
                                           children: [
                                             InkWell(onTap: () => _showIncomePersonDialog(person: person), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
                                             InkWell(
-                                              onTap: () {
-                                                setState(() {
-                                                  globalPersons.removeAt(index);
-                                                });
+                                              onTap: () async {
+                                                globalPersons.removeAt(index);
+                                                await _saveData();
                                               },
                                               child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
                                             ),
@@ -305,7 +328,9 @@ class _IncomeScreenState extends State<IncomeScreen> {
                                                 toDateStr: toDateController.text,
                                               ),
                                             ),
-                                          ).then((_) => setState(() {}));
+                                          ).then((_) async {
+                                            await _loadData();
+                                          });
                                         },
                                       ),
                                     );
@@ -315,7 +340,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
                       ],
                     ),
                   ),
-
                   // Tab 2: Income Categories
                   Padding(
                     padding: const EdgeInsets.all(12.0),
@@ -350,7 +374,6 @@ class _IncomeScreenState extends State<IncomeScreen> {
                                         }
                                       }
                                     }
-
                                     return Card(
                                       margin: const EdgeInsets.only(bottom: 8),
                                       child: ListTile(
@@ -363,10 +386,9 @@ class _IncomeScreenState extends State<IncomeScreen> {
                                           children: [
                                             InkWell(onTap: () => _showIncomeCategoryDialog(oldCategory: cat, index: index), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
                                             InkWell(
-                                              onTap: () {
-                                                setState(() {
-                                                  globalIncomeCategories.removeAt(index);
-                                                });
+                                              onTap: () async {
+                                                globalIncomeCategories.removeAt(index);
+                                                await _saveData();
                                               },
                                               child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
                                             ),
@@ -382,7 +404,9 @@ class _IncomeScreenState extends State<IncomeScreen> {
                                                 toDateStr: toDateController.text,
                                               ),
                                             ),
-                                          ).then((_) => setState(() {}));
+                                          ).then((_) async {
+                                            await _loadData();
+                                          });
                                         },
                                       ),
                                     );
@@ -402,11 +426,11 @@ class _IncomeScreenState extends State<IncomeScreen> {
   }
 }
 
+// --- Category Detail Screen ---
 class IncomeCategoryDetailScreen extends StatefulWidget {
   final String categoryName;
   final String? fromDateStr;
   final String? toDateStr;
-
   const IncomeCategoryDetailScreen({super.key, required this.categoryName, this.fromDateStr, this.toDateStr});
 
   @override
@@ -414,6 +438,13 @@ class IncomeCategoryDetailScreen extends StatefulWidget {
 }
 
 class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen> {
+  Future<void> _saveData() async {
+    await saveFinanceDataToPrefs();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   DateTime? _parseDate(String text) {
     try {
       List<String> parts = text.trim().split('-');
@@ -433,10 +464,8 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
     }
     DateTime? entryDate = _parseDate(dateStr);
     if (entryDate == null) return true;
-
     DateTime? fDate = _parseDate(widget.fromDateStr ?? '');
     DateTime? tDate = _parseDate(widget.toDateStr ?? '');
-
     if (fDate != null) {
       DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
       if (entryDate.isBefore(start)) return false;
@@ -459,16 +488,17 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                String name = controller.text.trim();
-                setState(() {
-                  globalPersons.add(PersonData(id: DateTime.now().toString(), name: name, bankAccounts: [], entries: []));
-                });
+            onPressed: () async {
+              String name = controller.text.trim();
+              if (name.isNotEmpty) {
+                globalPersons.add(PersonData(id: DateTime.now().toString(), name: name, bankAccounts: [], entries: []));
+                await _saveData();
                 dialogSetState(() {
                   onPersonAdded(name);
                 });
-                Navigator.pop(context);
+                if (mounted) {
+                  Navigator.pop(context);
+                }
               }
             },
             child: const Text('Add'),
@@ -489,16 +519,17 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                String bankName = controller.text.trim();
-                setState(() {
-                  targetPerson.bankAccounts.add(bankName);
-                });
+            onPressed: () async {
+              String bankName = controller.text.trim();
+              if (bankName.isNotEmpty) {
+                targetPerson.bankAccounts.add(bankName);
+                await _saveData();
                 dialogSetState(() {
                   onBankAdded(bankName);
                 });
-                Navigator.pop(context);
+                if (mounted) {
+                  Navigator.pop(context);
+                }
               }
             },
             child: const Text('Save'),
@@ -512,7 +543,6 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
     String selectedPerson = existingItem?.person ?? (globalPersons.isNotEmpty ? globalPersons.first.name : '');
     String selectedAccount = existingItem?.depositAccount ?? 'Cash';
     String selectedCategory = existingItem?.category ?? widget.categoryName;
-
     final dateController = TextEditingController(
       text: existingItem?.date ?? "${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}",
     );
@@ -528,23 +558,19 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
               (p) => p.name == selectedPerson,
               orElse: () => globalPersons.isNotEmpty ? globalPersons.first : PersonData(id: '0', name: 'Default', bankAccounts: [], entries: []),
             );
-
             List<String> accounts = ['Cash', ...currentP.bankAccounts];
             if (!accounts.contains(selectedAccount)) {
               selectedAccount = 'Cash';
             }
-
             if (!globalIncomeCategories.contains(selectedCategory) && globalIncomeCategories.isNotEmpty) {
               selectedCategory = globalIncomeCategories.first;
             }
-
             return AlertDialog(
               title: Text(existingItem == null ? 'New Income Entry' : 'Edit Income Entry'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Income Person Row
                     Row(
                       children: [
                         Expanded(
@@ -572,8 +598,6 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
                       ],
                     ),
                     const SizedBox(height: 12),
-                    
-                    // Deposit Account Row
                     Row(
                       children: [
                         Expanded(
@@ -597,61 +621,6 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
                       ],
                     ),
                     const SizedBox(height: 12),
-
-                    // Income Category Row (పక్కనే + బటన్‌తో)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: globalIncomeCategories.contains(selectedCategory) ? selectedCategory : (globalIncomeCategories.isNotEmpty ? globalIncomeCategories.first : null),
-                            decoration: const InputDecoration(labelText: 'Income Category', border: OutlineInputBorder()),
-                            items: globalIncomeCategories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                            onChanged: (val) => setDialogState(() => selectedCategory = val!),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle, color: Colors.green),
-                          onPressed: () {
-                            final catController = TextEditingController();
-                            showDialog(
-                              context: context,
-                              builder: (BuildContext dialogContext) {
-                                return AlertDialog(
-                                  title: const Text('Add Income Category'),
-                                  content: TextField(
-                                    controller: catController,
-                                    decoration: const InputDecoration(labelText: 'Category Name', border: OutlineInputBorder()),
-                                  ),
-                                  actions: [
-                                    TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-                                    ElevatedButton(
-                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-                                      onPressed: () {
-                                        String newCat = catController.text.trim();
-                                        if (newCat.isNotEmpty) {
-                                          setState(() {
-                                            if (!globalIncomeCategories.contains(newCat)) {
-                                              globalIncomeCategories.add(newCat);
-                                            }
-                                          });
-                                          setDialogState(() {
-                                            selectedCategory = newCat;
-                                          });
-                                          Navigator.pop(dialogContext);
-                                        }
-                                      },
-                                      child: const Text('Add'),
-                                    ),
-                                  ],
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
                     TextField(controller: dateController, decoration: const InputDecoration(labelText: 'Date (dd-mm-yyyy)', border: OutlineInputBorder())),
                     const SizedBox(height: 12),
                     TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description (Optional)', border: OutlineInputBorder())),
@@ -661,54 +630,47 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
                 ),
               ),
               actions: [
-                TextButton(
-                  onPressed: () {
-                    dateController.text = "${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}";
-                    descController.clear();
-                    amountController.clear();
-                  },
-                  child: const Text('Reset', style: TextStyle(color: Colors.orange)),
-                ),
                 TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-                  onPressed: () {
-                    if (amountController.text.trim().isNotEmpty && selectedPerson.isNotEmpty && selectedCategory.isNotEmpty) {
+                  onPressed: () async {
+                    if (amountController.text.trim().isNotEmpty && selectedPerson.isNotEmpty) {
                       double amt = double.tryParse(amountController.text.trim()) ?? 0.0;
-                      setState(() {
-                        PersonData target = globalPersons.firstWhere((p) => p.name == selectedPerson);
-                        if (existingItem == null) {
-                          target.entries.add(
-                            FinanceItem(
-                              id: DateTime.now().toString(),
-                              title: selectedCategory,
-                              amount: amt.abs(),
-                              person: selectedPerson,
-                              category: selectedCategory,
-                              depositAccount: selectedAccount,
-                              date: dateController.text.trim(),
-                              description: descController.text.trim(),
-                            ),
-                          );
-                        } else {
-                          for (var p in globalPersons) {
-                            p.entries.removeWhere((e) => e.id == existingItem.id);
-                          }
-                          target.entries.add(
-                            FinanceItem(
-                              id: existingItem.id,
-                              title: selectedCategory,
-                              amount: amt.abs(),
-                              person: selectedPerson,
-                              category: selectedCategory,
-                              depositAccount: selectedAccount,
-                              date: dateController.text.trim(),
-                              description: descController.text.trim(),
-                            ),
-                          );
+                      PersonData target = globalPersons.firstWhere((p) => p.name == selectedPerson);
+                      if (existingItem == null) {
+                        target.entries.add(
+                          FinanceItem(
+                            id: DateTime.now().toString(),
+                            title: widget.categoryName,
+                            amount: amt.abs(),
+                            person: selectedPerson,
+                            category: widget.categoryName,
+                            depositAccount: selectedAccount,
+                            date: dateController.text.trim(),
+                            description: descController.text.trim(),
+                          ),
+                        );
+                      } else {
+                        for (var p in globalPersons) {
+                          p.entries.removeWhere((e) => e.id == existingItem.id);
                         }
-                      });
-                      Navigator.pop(context);
+                        target.entries.add(
+                          FinanceItem(
+                            id: existingItem.id,
+                            title: widget.categoryName,
+                            amount: amt.abs(),
+                            person: selectedPerson,
+                            category: widget.categoryName,
+                            depositAccount: selectedAccount,
+                            date: dateController.text.trim(),
+                            description: descController.text.trim(),
+                          ),
+                        );
+                      }
+                      await _saveData();
+                      if (mounted) {
+                        Navigator.pop(context);
+                      }
                     }
                   },
                   child: const Text('Save'),
@@ -731,7 +693,6 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
         }
       }
     }
-
     double categoryTotal = categoryEntries.fold(0.0, (sum, item) => sum + item.amount);
 
     return Scaffold(
@@ -791,12 +752,11 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
                               children: [
                                 InkWell(onTap: () => _openEntryDialog(existingItem: entry), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 18, color: Colors.blue))),
                                 InkWell(
-                                  onTap: () {
-                                    setState(() {
-                                      for (var p in globalPersons) {
-                                        p.entries.removeWhere((e) => e.id == entry.id);
-                                      }
-                                    });
+                                  onTap: () async {
+                                    for (var p in globalPersons) {
+                                      p.entries.removeWhere((e) => e.id == entry.id);
+                                    }
+                                    await _saveData();
                                   },
                                   child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 18, color: Colors.red)),
                                 ),
@@ -814,11 +774,11 @@ class _IncomeCategoryDetailScreenState extends State<IncomeCategoryDetailScreen>
   }
 }
 
+// --- Person Detail Screen ---
 class IncomePersonDetailScreen extends StatefulWidget {
   final PersonData person;
   final String? fromDateStr;
   final String? toDateStr;
-
   const IncomePersonDetailScreen({super.key, required this.person, this.fromDateStr, this.toDateStr});
 
   @override
@@ -826,6 +786,13 @@ class IncomePersonDetailScreen extends StatefulWidget {
 }
 
 class _IncomePersonDetailScreenState extends State<IncomePersonDetailScreen> {
+  Future<void> _saveData() async {
+    await saveFinanceDataToPrefs();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   DateTime? _parseDate(String text) {
     try {
       List<String> parts = text.trim().split('-');
@@ -845,10 +812,8 @@ class _IncomePersonDetailScreenState extends State<IncomePersonDetailScreen> {
     }
     DateTime? entryDate = _parseDate(dateStr);
     if (entryDate == null) return true;
-
     DateTime? fDate = _parseDate(widget.fromDateStr ?? '');
     DateTime? tDate = _parseDate(widget.toDateStr ?? '');
-
     if (fDate != null) {
       DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
       if (entryDate.isBefore(start)) return false;
@@ -871,12 +836,14 @@ class _IncomePersonDetailScreenState extends State<IncomePersonDetailScreen> {
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white),
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                setState(() {
-                  widget.person.bankAccounts.add(controller.text.trim());
-                });
-                Navigator.pop(context);
+            onPressed: () async {
+              String bankName = controller.text.trim();
+              if (bankName.isNotEmpty) {
+                widget.person.bankAccounts.add(bankName);
+                await _saveData();
+                if (mounted) {
+                  Navigator.pop(context);
+                }
               }
             },
             child: const Text('Save'),
@@ -947,11 +914,11 @@ class _IncomePersonDetailScreenState extends State<IncomePersonDetailScreen> {
                             leading: const CircleAvatar(backgroundColor: Colors.green, radius: 18, child: Icon(Icons.attach_money, color: Colors.white, size: 18)),
                             title: Text('${entry.category} - ₹${entry.amount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                             subtitle: Text('Account: ${entry.depositAccount} | Date: ${entry.date}${entry.description.isNotEmpty ? '\nNote: ${entry.description}' : ''}', style: const TextStyle(fontSize: 12)),
+                            isThreeLine: true,
                             trailing: InkWell(
-                              onTap: () {
-                                setState(() {
-                                  widget.person.entries.removeWhere((e) => e.id == entry.id);
-                                });
+                              onTap: () async {
+                                widget.person.entries.removeWhere((e) => e.id == entry.id);
+                                await _saveData();
                               },
                               child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, color: Colors.red, size: 20)),
                             ),

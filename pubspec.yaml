@@ -12,6 +12,7 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   intl: ^0.20.3
+  shared_preferences: ^2.2.2  # Local data storage కోసం యాడ్ చేశాం
 
 dev_dependencies:
   flutter_test:

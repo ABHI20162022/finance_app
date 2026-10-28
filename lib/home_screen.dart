@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'income_screen.dart';
 import 'screens/expence_screen.dart';
+import 'screens/shopping_screen.dart';
+import 'screens/assets_liabilities_screen.dart';
 
 final List<Map<String, dynamic>> kMainHeadings = [
   {
@@ -15,35 +17,35 @@ final List<Map<String, dynamic>> kMainHeadings = [
     'subtitle': 'Track expenses, sub-categories and net balance',
     'icon': Icons.trending_down,
     'color': Colors.red,
-    'screen': const ExpenceScreen(),
+    'screen': ExpenceScreen(),
   },
   {
-    'title': 'Bank Accounts',
-    'subtitle': 'Manage cash and bank accounts',
+    'title': 'Shopping Management',
+    'subtitle': 'Categories, shops, required lists & bill viewer',
+    'icon': Icons.shopping_cart,
+    'color': Colors.orange,
+    'screen': const ShoppingScreen(),
+  },
+  {
+    'title': 'Assets & Liabilities',
+    'subtitle': 'Track properties, savings, loans & net worth',
     'icon': Icons.account_balance,
-    'color': Colors.blue,
-    'screen': const IncomeScreen(),
+    'color': Colors.teal,
+    'screen': const AssetsLiabilitiesScreen(),
   },
   {
     'title': 'Reports & Analytics',
     'subtitle': 'View financial summaries and date filters',
     'icon': Icons.bar_chart,
-    'color': Colors.orange,
-    'screen': const IncomeScreen(),
-  },
-  {
-    'title': 'Categories',
-    'subtitle': 'Setup income and expense categories',
-    'icon': Icons.category,
-    'color': Colors.purple,
-    'screen': const IncomeScreen(),
+    'color': Colors.amber.shade800,
+    'screen': const IncomeScreen(), // అవసరమైన స్క్రీన్ కి మార్చుకోవచ్చు
   },
   {
     'title': 'Settings & Backup',
     'subtitle': 'App preferences and data management',
     'icon': Icons.settings,
-    'color': Colors.grey,
-    'screen': const IncomeScreen(),
+    'color': Colors.blueGrey,
+    'screen': const IncomeScreen(), // అవసరమైన స్క్రీన్ కి మార్చుకోవచ్చు
   },
 ];
 
@@ -62,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Family Finance Tracker', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.blue.shade800,
         foregroundColor: Colors.white,
+        centerTitle: true,
       ),
       body: Padding(
         padding: const EdgeInsets.all(12.0),
@@ -69,14 +72,16 @@ class _HomeScreenState extends State<HomeScreen> {
           itemCount: kMainHeadings.length,
           itemBuilder: (context, index) {
             final heading = kMainHeadings[index];
+            final Color itemColor = heading['color'];
+            
             return Card(
               elevation: 3,
               margin: const EdgeInsets.only(bottom: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: (heading['color'] as MaterialColor).shade100,
-                  child: Icon(heading['icon'], color: heading['color']),
+                  backgroundColor: itemColor.withOpacity(0.2),
+                  child: Icon(heading['icon'], color: itemColor),
                 ),
                 title: Text(
                   heading['title'],

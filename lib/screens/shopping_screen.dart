@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // --- Data Models ---
 class ShoppingItem {
@@ -40,8 +42,6 @@ class ShoppingItem {
   double _parseQty(String text, String type) {
     text = text.trim().toLowerCase();
     if (text.isEmpty) return 0.0;
-
-    // 1. If Unit is Pocket or Number (No), take the first count (e.g. '2' from '2*200gm' or '2*10')
     if (type == 'Pocket' || type == 'Number (No)') {
       if (text.contains('*') || text.contains('x')) {
         List<String> parts = text.split(RegExp(r'[*x]'));
@@ -50,8 +50,6 @@ class ShoppingItem {
       String cleanNumStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
       return double.tryParse(cleanNumStr) ?? 0.0;
     }
-
-    // 2. If Unit is Weight (Kg/g), calculate total weight (e.g. 2 * 200gm = 400gm)
     if (text.contains('*') || text.contains('x')) {
       List<String> parts = text.split(RegExp(r'[*x]'));
       if (parts.length == 2) {
@@ -60,33 +58,24 @@ class ShoppingItem {
         return count * subQty;
       }
     }
-
     return _parseSingleWeightQty(text);
   }
 
   double _parseSingleWeightQty(String text) {
     text = text.trim().toLowerCase();
     if (text.isEmpty) return 0.0;
-
-    // Fractions
     if (text == '1/2' || text == 'half') return 0.5;
     if (text == '1/4') return 0.25;
     if (text == '3/4') return 0.75;
-
-    // KG
     if (text.contains('kg')) {
       String numStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
       return double.tryParse(numStr) ?? 0.0;
     }
-
-    // Grams
     if (text.contains('gm') || text.contains('g')) {
       String numStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
       double grams = double.tryParse(numStr) ?? 0.0;
-      return grams / 1000.0; // convert to kg
+      return grams / 1000.0;
     }
-
-    // Direct Numbers
     String cleanNumStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
     return double.tryParse(cleanNumStr) ?? 0.0;
   }
@@ -112,7 +101,6 @@ class RequiredListEntry {
   String? categoryName;
   List<ShoppingItem> selectedItems;
   double grandTotal;
-
   RequiredListEntry({
     required this.id,
     required this.date,
@@ -123,9 +111,145 @@ class RequiredListEntry {
   });
 }
 
+// Global shared lists
+List<CategoryModel> globalCategories = [
+  CategoryModel(
+    id: '1',
+    name: 'Groceries (కిరాణా)',
+    items: [
+      ShoppingItem(id: '101', name: 'Rice', unitType: 'Weight (Kg/g)'),
+      ShoppingItem(id: '102', name: 'Dal', unitType: 'Weight (Kg/g)'),
+    ],
+  ),
+  CategoryModel(
+    id: '2',
+    name: 'Vegetables (కూరగాయలు)',
+    items: [
+      ShoppingItem(id: '201', name: 'Tomato', unitType: 'Weight (Kg/g)'),
+    ],
+  ),
+];
+
+List<ShopModel> globalShops = [
+  ShopModel(id: '1', name: 'Reliance Fresh'),
+  ShopModel(id: '2', name: 'D-Mart'),
+  ShopModel(id: '3', name: 'Local Rythu Bazar'),
+];
+
+List<RequiredListEntry> globalRequiredLists = [];
+
+// Local Storage Helpers for Shopping
+Future<void> saveShoppingDataToPrefs() async {
+  final prefs = await SharedPreferences.getInstance();
+
+  // 1. Categories
+  List<Map<String, dynamic>> catData = globalCategories.map((c) => {
+    'id': c.id,
+    'name': c.name,
+    'items': c.items.map((i) => {
+      'id': i.id,
+      'name': i.name,
+      'unitType': i.unitType,
+    }).toList(),
+  }).toList();
+  await prefs.setString('saved_shopping_categories', jsonEncode(catData));
+
+  // 2. Shops
+  List<Map<String, dynamic>> shopData = globalShops.map((s) => {
+    'id': s.id,
+    'name': s.name,
+  }).toList();
+  await prefs.setString('saved_shopping_shops', jsonEncode(shopData));
+
+  // 3. Required Lists
+  List<Map<String, dynamic>> reqData = globalRequiredLists.map((r) => {
+    'id': r.id,
+    'date': r.date,
+    'shopName': r.shopName,
+    'categoryName': r.categoryName,
+    'grandTotal': r.grandTotal,
+    'selectedItems': r.selectedItems.map((i) => {
+      'id': i.id,
+      'name': i.name,
+      'unitType': i.unitType,
+      'isSelected': i.isSelected,
+      'qtyText': i.qtyText,
+      'rate': i.rate,
+      'amount': i.amount,
+    }).toList(),
+  }).toList();
+  await prefs.setString('saved_shopping_required_lists', jsonEncode(reqData));
+}
+
+Future<void> loadShoppingDataFromPrefs() async {
+  final prefs = await SharedPreferences.getInstance();
+
+  // 1. Categories Load
+  String? catStr = prefs.getString('saved_shopping_categories');
+  if (catStr != null) {
+    List<dynamic> decodedCats = jsonDecode(catStr);
+    globalCategories = decodedCats.map((cMap) {
+      var itemsList = (cMap['items'] as List? ?? []).map((iMap) => ShoppingItem(
+        id: iMap['id'],
+        name: iMap['name'],
+        unitType: iMap['unitType'],
+      )).toList();
+      return CategoryModel(id: cMap['id'], name: cMap['name'], items: itemsList);
+    }).toList();
+  }
+
+  // 2. Shops Load
+  String? shopStr = prefs.getString('saved_shopping_shops');
+  if (shopStr != null) {
+    List<dynamic> decodedShops = jsonDecode(shopStr);
+    globalShops = decodedShops.map((sMap) => ShopModel(id: sMap['id'], name: sMap['name'])).toList();
+  }
+
+  // 3. Required Lists Load
+  String? reqStr = prefs.getString('saved_shopping_required_lists');
+  if (reqStr != null) {
+    List<dynamic> decodedReqs = jsonDecode(reqStr);
+    globalRequiredLists = decodedReqs.map((rMap) {
+      var selItems = (rMap['selectedItems'] as List? ?? []).map((iMap) => ShoppingItem(
+        id: iMap['id'],
+        name: iMap['name'],
+        unitType: iMap['unitType'],
+        isSelected: iMap['isSelected'] ?? false,
+        qtyText: iMap['qtyText'] ?? '',
+        rate: (iMap['rate'] as num).toDouble(),
+        amount: (iMap['amount'] as num).toDouble(),
+      )).toList();
+      return RequiredListEntry(
+        id: rMap['id'],
+        date: rMap['date'],
+        shopName: rMap['shopName'],
+        categoryName: rMap['categoryName'],
+        grandTotal: (rMap['grandTotal'] as num).toDouble(),
+        selectedItems: selItems,
+      );
+    }).toList();
+  }
+}
+
 // --- Main Shopping Dashboard Screen ---
-class ShoppingScreen extends StatelessWidget {
+class ShoppingScreen extends StatefulWidget {
   const ShoppingScreen({super.key});
+
+  @override
+  State<ShoppingScreen> createState() => _ShoppingScreenState();
+}
+
+class _ShoppingScreenState extends State<ShoppingScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _initData();
+  }
+
+  Future<void> _initData() async {
+    await loadShoppingDataFromPrefs();
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -169,7 +293,7 @@ class ShoppingScreen extends StatelessWidget {
             context,
             title: 'Rate Comparison List',
             subtitle: 'Compare item rates',
-            icon: Icons.compare_arrows,
+            icon: Icons.compare_arrows, // ఎర్రర్ రాకుండా ఇక్కడ మార్చబడింది
             color: Colors.purple,
             destination: const RateComparisonScreen(),
           ),
@@ -194,7 +318,7 @@ class ShoppingScreen extends StatelessWidget {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (context) => destination),
-          );
+          ).then((_) => setState(() {}));
         },
         borderRadius: BorderRadius.circular(15),
         child: Padding(
@@ -211,12 +335,9 @@ class ShoppingScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
-                    Text(subtitle,
-                        style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                    Text(subtitle, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
                   ],
                 ),
               ),
@@ -229,33 +350,6 @@ class ShoppingScreen extends StatelessWidget {
   }
 }
 
-// Global shared lists
-List<CategoryModel> globalCategories = [
-  CategoryModel(
-    id: '1',
-    name: 'Groceries (కిరాణా)',
-    items: [
-      ShoppingItem(id: '101', name: 'Rice', unitType: 'Weight (Kg/g)'),
-      ShoppingItem(id: '102', name: 'Dal', unitType: 'Weight (Kg/g)'),
-    ],
-  ),
-  CategoryModel(
-    id: '2',
-    name: 'Vegetables (కూరగాయలు)',
-    items: [
-      ShoppingItem(id: '201', name: 'Tomato', unitType: 'Weight (Kg/g)'),
-    ],
-  ),
-];
-
-List<ShopModel> globalShops = [
-  ShopModel(id: '1', name: 'Reliance Fresh'),
-  ShopModel(id: '2', name: 'D-Mart'),
-  ShopModel(id: '3', name: 'Local Rythu Bazar'),
-];
-
-List<RequiredListEntry> globalRequiredLists = [];
-
 // --- Screen 1: Categories & Items Management ---
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -266,8 +360,7 @@ class CategoriesScreen extends StatefulWidget {
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
   void _openCategoryDialog({CategoryModel? editingCategory}) {
-    TextEditingController catController =
-        TextEditingController(text: editingCategory?.name ?? '');
+    TextEditingController catController = TextEditingController(text: editingCategory?.name ?? '');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -277,11 +370,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           decoration: const InputDecoration(labelText: 'Category Name'),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (catController.text.isNotEmpty) {
                 setState(() {
                   if (editingCategory != null) {
@@ -294,6 +385,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                     ));
                   }
                 });
+                await saveShoppingDataToPrefs();
                 Navigator.pop(context);
               }
             },
@@ -319,8 +411,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: ListTile(
               leading: const Icon(Icons.folder, color: Colors.orange),
-              title: Text(cat.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              title: Text(cat.name, style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text('${cat.items.length} items'),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -331,10 +422,11 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () {
+                    onPressed: () async {
                       setState(() {
                         globalCategories.removeAt(index);
                       });
+                      await saveShoppingDataToPrefs();
                     },
                   ),
                   const Icon(Icons.arrow_forward_ios, size: 16),
@@ -344,10 +436,12 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        CategoryItemsDetailScreen(category: cat),
+                    builder: (context) => CategoryItemsDetailScreen(category: cat),
                   ),
-                ).then((_) => setState(() {}));
+                ).then((_) async {
+                  await saveShoppingDataToPrefs();
+                  setState(() {});
+                });
               },
             ),
           );
@@ -369,16 +463,13 @@ class CategoryItemsDetailScreen extends StatefulWidget {
   const CategoryItemsDetailScreen({super.key, required this.category});
 
   @override
-  State<CategoryItemsDetailScreen> createState() =>
-      _CategoryItemsDetailScreenState();
+  State<CategoryItemsDetailScreen> createState() => _CategoryItemsDetailScreenState();
 }
 
 class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
   void _openAddItemDialog({ShoppingItem? editingItem}) {
-    final nameController =
-        TextEditingController(text: editingItem?.name ?? '');
+    final nameController = TextEditingController(text: editingItem?.name ?? '');
     String selectedUnit = editingItem?.unitType ?? 'Weight (Kg/g)';
-
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -386,9 +477,7 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
         return StatefulBuilder(
           builder: (context, dialogSetState) {
             return AlertDialog(
-              title: Text(editingItem == null
-                  ? 'Add Item (Continuous)'
-                  : 'Edit Item'),
+              title: Text(editingItem == null ? 'Add Item (Continuous)' : 'Edit Item'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -400,16 +489,11 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
                     const SizedBox(height: 10),
                     DropdownButtonFormField<String>(
                       value: selectedUnit,
-                      decoration:
-                          const InputDecoration(labelText: 'Select Unit Type'),
+                      decoration: const InputDecoration(labelText: 'Select Unit Type'),
                       items: const [
-                        DropdownMenuItem(
-                            value: 'Weight (Kg/g)',
-                            child: Text('Weight (Kg / g)')),
-                        DropdownMenuItem(
-                            value: 'Pocket', child: Text('Pocket')),
-                        DropdownMenuItem(
-                            value: 'Number (No)', child: Text('Number (No)')),
+                        DropdownMenuItem(value: 'Weight (Kg/g)', child: Text('Weight (Kg / g)')),
+                        DropdownMenuItem(value: 'Pocket', child: Text('Pocket')),
+                        DropdownMenuItem(value: 'Number (No)', child: Text('Number (No)')),
                       ],
                       onChanged: (val) {
                         if (val != null) {
@@ -423,12 +507,11 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel',
-                      style: TextStyle(color: Colors.red, fontSize: 16)),
+                  child: const Text('Cancel', style: TextStyle(color: Colors.red, fontSize: 16)),
                 ),
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                  onPressed: () {
+                  onPressed: () async {
                     if (nameController.text.isNotEmpty) {
                       setState(() {
                         if (editingItem != null) {
@@ -443,12 +526,11 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
                           ));
                           nameController.clear();
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text(
-                                    'Item added! Add another or click Cancel.')),
+                            const SnackBar(content: Text('Item added! Add another or click Cancel.')),
                           );
                         }
                       });
+                      await saveShoppingDataToPrefs();
                     }
                   },
                   child: Text(editingItem == null ? 'Add & Continue' : 'Save'),
@@ -475,26 +557,24 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
               itemBuilder: (context, index) {
                 final item = widget.category.items[index];
                 return Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   child: ListTile(
-                    title: Text(item.name,
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text('Type: ${item.unitType}'),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () =>
-                              _openAddItemDialog(editingItem: item),
+                          onPressed: () => _openAddItemDialog(editingItem: item),
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
+                          onPressed: () async {
                             setState(() {
                               widget.category.items.removeAt(index);
                             });
+                            await saveShoppingDataToPrefs();
                           },
                         ),
                       ],
@@ -523,8 +603,7 @@ class ShopSelectionScreen extends StatefulWidget {
 
 class _ShopSelectionScreenState extends State<ShopSelectionScreen> {
   void _openShopDialog({ShopModel? editingShop}) {
-    TextEditingController shopController =
-        TextEditingController(text: editingShop?.name ?? '');
+    TextEditingController shopController = TextEditingController(text: editingShop?.name ?? '');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -534,11 +613,9 @@ class _ShopSelectionScreenState extends State<ShopSelectionScreen> {
           decoration: const InputDecoration(labelText: 'Shop Name'),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (shopController.text.isNotEmpty) {
                 setState(() {
                   if (editingShop != null) {
@@ -550,6 +627,7 @@ class _ShopSelectionScreenState extends State<ShopSelectionScreen> {
                     ));
                   }
                 });
+                await saveShoppingDataToPrefs();
                 Navigator.pop(context);
               }
             },
@@ -574,13 +652,10 @@ class _ShopSelectionScreenState extends State<ShopSelectionScreen> {
               itemBuilder: (context, index) {
                 final shop = globalShops[index];
                 return Card(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   child: ListTile(
                     leading: const Icon(Icons.store, color: Colors.blue),
-                    title: Text(shop.name,
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    title: Text(shop.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -590,10 +665,11 @@ class _ShopSelectionScreenState extends State<ShopSelectionScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
+                          onPressed: () async {
                             setState(() {
                               globalShops.removeAt(index);
                             });
+                            await saveShoppingDataToPrefs();
                           },
                         ),
                       ],
@@ -621,10 +697,9 @@ class RequiredItemsScreen extends StatefulWidget {
 }
 
 class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
-  // Helper to format list text
   String _getListText(RequiredListEntry entry) {
     String text = "========================================\n";
-    text += "           SHOPPING BILL REPORT         \n";
+    text += "         SHOPPING BILL REPORT         \n";
     text += "========================================\n";
     text += "Date : ${entry.date}\n";
     text += "Shop : ${entry.shopName ?? 'N/A'}\n";
@@ -643,7 +718,6 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
     return text;
   }
 
-  // Share List via Clipboard & SnackBar
   void _shareList(RequiredListEntry entry) {
     String listText = _getListText(entry);
     Clipboard.setData(ClipboardData(text: listText));
@@ -656,7 +730,6 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
     );
   }
 
-  // Notepad / Wordpad Style Report Viewer & Downloader Dialog
   void _openNotepadDialog(RequiredListEntry entry) {
     String listText = _getListText(entry);
     showDialog(
@@ -673,7 +746,7 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
           width: double.maxFinite,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.yellow[100], // Fixed null color issue
+            color: Colors.yellow[100],
             border: Border.all(color: Colors.brown.shade300),
             borderRadius: BorderRadius.circular(6),
           ),
@@ -690,10 +763,7 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
             onPressed: () {
@@ -736,42 +806,39 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   child: ExpansionTile(
-                    title: Text('Date: ${entry.date} | Shop: ${entry.shopName ?? 'N/A'}',
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text('Date: ${entry.date} | Shop: ${entry.shopName ?? 'N/A'}', style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text('Total Amount: ₹${entry.grandTotal.toStringAsFixed(2)}'),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Edit
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           onPressed: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => CreateRequiredListScreen(
-                                  editingEntry: entry,
-                                ),
+                                builder: (context) => CreateRequiredListScreen(editingEntry: entry),
                               ),
-                            ).then((_) => setState(() {}));
-                          },
-                        ),
-                        // Delete
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            setState(() {
-                              globalRequiredLists.removeAt(index);
+                            ).then((_) async {
+                              await saveShoppingDataToPrefs();
+                              setState(() {});
                             });
                           },
                         ),
-                        // Share Button
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () async {
+                            setState(() {
+                              globalRequiredLists.removeAt(index);
+                            });
+                            await saveShoppingDataToPrefs();
+                          },
+                        ),
                         IconButton(
                           icon: const Icon(Icons.share, color: Colors.green),
                           onPressed: () => _shareList(entry),
                           tooltip: 'Share List',
                         ),
-                        // Download / Notepad Button
                         IconButton(
                           icon: const Icon(Icons.description, color: Colors.purple),
                           onPressed: () => _openNotepadDialog(entry),
@@ -783,8 +850,7 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
                       return ListTile(
                         title: Text(item.name),
                         subtitle: Text('Unit: ${item.unitType} | Qty: ${item.qtyText} | Rate: ₹${item.rate}'),
-                        trailing: Text('₹${item.amount.toStringAsFixed(2)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold)),
+                        trailing: Text('₹${item.amount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
                       );
                     }).toList(),
                   ),
@@ -798,7 +864,10 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
             MaterialPageRoute(
               builder: (context) => const CreateRequiredListScreen(),
             ),
-          ).then((_) => setState(() {}));
+          ).then((_) async {
+            await saveShoppingDataToPrefs();
+            setState(() {});
+          });
         },
         backgroundColor: Colors.green,
         icon: const Icon(Icons.add),
@@ -814,15 +883,13 @@ class CreateRequiredListScreen extends StatefulWidget {
   const CreateRequiredListScreen({super.key, this.editingEntry});
 
   @override
-  State<CreateRequiredListScreen> createState() =>
-      _CreateRequiredListScreenState();
+  State<CreateRequiredListScreen> createState() => _CreateRequiredListScreenState();
 }
 
 class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
   late TextEditingController _dateController;
   String? _selectedShop;
   String? _selectedCategory;
-
   List<ShoppingItem> _formItems = [];
   final Map<String, TextEditingController> _qtyControllers = {};
   final Map<String, TextEditingController> _rateControllers = {};
@@ -833,10 +900,8 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
     String defaultDate = widget.editingEntry?.date ??
         '${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}';
     _dateController = TextEditingController(text: defaultDate);
-
     _selectedShop = widget.editingEntry?.shopName;
     _selectedCategory = widget.editingEntry?.categoryName;
-
     _loadItemsForSelection();
   }
 
@@ -844,7 +909,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
     _formItems = [];
     _qtyControllers.clear();
     _rateControllers.clear();
-
     for (var cat in globalCategories) {
       if (_selectedCategory == null || _selectedCategory == 'All Categories' || cat.name == _selectedCategory) {
         for (var item in cat.items) {
@@ -874,7 +938,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
           );
           newItem.calculateAmount();
           _formItems.add(newItem);
-
           _qtyControllers[item.id] = TextEditingController(text: qText);
           _rateControllers[item.id] = TextEditingController(text: r == 0 ? '' : r.toString());
         }
@@ -893,11 +956,9 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
           decoration: const InputDecoration(labelText: 'Shop Name'),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (shopController.text.isNotEmpty) {
                 setState(() {
                   globalShops.add(ShopModel(
@@ -906,6 +967,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                   ));
                   _selectedShop = shopController.text;
                 });
+                await saveShoppingDataToPrefs();
                 Navigator.pop(context);
               }
             },
@@ -920,7 +982,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
     TextEditingController itemController = TextEditingController();
     String selectedUnit = 'Weight (Kg/g)';
     String? targetCategory = _selectedCategory ?? (globalCategories.isNotEmpty ? globalCategories.first.name : null);
-
     showDialog(
       context: context,
       builder: (context) {
@@ -965,7 +1026,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
             actions: [
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   if (itemController.text.isNotEmpty && targetCategory != null) {
                     var cat = globalCategories.firstWhere((c) => c.name == targetCategory);
                     setState(() {
@@ -976,6 +1037,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                       ));
                       _loadItemsForSelection();
                     });
+                    await saveShoppingDataToPrefs();
                     Navigator.pop(context);
                   }
                 },
@@ -1001,7 +1063,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
   @override
   Widget build(BuildContext context) {
     List<String> categoryNames = ['All Categories', ...globalCategories.map((e) => e.name)];
-
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.editingEntry == null ? 'Create Required List' : 'Edit Required List'),
@@ -1012,7 +1073,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Date Field (Editable dd-mm-yyyy)
             TextField(
               controller: _dateController,
               decoration: const InputDecoration(
@@ -1021,8 +1081,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
               ),
             ),
             const SizedBox(height: 12),
-
-            // 2. Shop Name Optional with '+' button
             Row(
               children: [
                 Expanded(
@@ -1054,8 +1112,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
               ],
             ),
             const SizedBox(height: 12),
-
-            // 3. Category Dropdown
             DropdownButtonFormField<String>(
               value: _selectedCategory ?? 'All Categories',
               decoration: const InputDecoration(
@@ -1076,7 +1132,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
               },
             ),
             const SizedBox(height: 16),
-
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1093,29 +1148,23 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
               ],
             ),
             const SizedBox(height: 8),
-
-            // 4. Items List
             Expanded(
               child: ListView.builder(
                 itemCount: _formItems.length,
                 itemBuilder: (context, index) {
                   final item = _formItems[index];
-
-                  // Dynamic Hint Text
                   String dynamicHint = '1/2, 2*200gm, 1kg';
                   if (item.unitType == 'Pocket') {
                     dynamicHint = '1, 2*200gm, 2';
                   } else if (item.unitType == 'Number (No)') {
                     dynamicHint = '10, 2*10';
                   }
-
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 4),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
                       child: Row(
                         children: [
-                          // Checkbox & Item Name & Tappable Unit Type
                           Checkbox(
                             value: item.isSelected,
                             activeColor: Colors.green,
@@ -1132,8 +1181,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                               children: [
                                 Text(
                                   item.name,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.bold, fontSize: 14),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                                 ),
                                 const SizedBox(height: 2),
                                 InkWell(
@@ -1160,8 +1208,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                             ),
                           ),
                           const SizedBox(width: 4),
-
-                          // Dynamic Qty Field
                           Expanded(
                             flex: 1,
                             child: TextField(
@@ -1181,8 +1227,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                             ),
                           ),
                           const SizedBox(width: 4),
-
-                          // Rate Field
                           Expanded(
                             flex: 1,
                             child: TextField(
@@ -1202,8 +1246,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                             ),
                           ),
                           const SizedBox(width: 4),
-
-                          // Total Display
                           Expanded(
                             flex: 1,
                             child: Container(
@@ -1215,8 +1257,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                               ),
                               child: Text(
                                 '₹${item.amount.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green),
                                 textAlign: TextAlign.center,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -1229,8 +1270,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                 },
               ),
             ),
-
-            // 5. Grand Total Display
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -1241,21 +1280,15 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Grand Total:',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+                  const Text('Grand Total:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   Text(
                     '₹${_grandTotal.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green),
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 10),
-
-            // Save Button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -1263,17 +1296,14 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                   backgroundColor: Colors.green,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
-                onPressed: () {
-                  List<ShoppingItem> selectedList =
-                      _formItems.where((element) => element.isSelected).toList();
-
+                onPressed: () async {
+                  List<ShoppingItem> selectedList = _formItems.where((element) => element.isSelected).toList();
                   if (selectedList.isEmpty) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Please select at least one item!')),
                     );
                     return;
                   }
-
                   setState(() {
                     if (widget.editingEntry != null) {
                       widget.editingEntry!.date = _dateController.text;
@@ -1292,7 +1322,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                       ));
                     }
                   });
-
+                  await saveShoppingDataToPrefs();
                   Navigator.pop(context);
                 },
                 child: Text(
