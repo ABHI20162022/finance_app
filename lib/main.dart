@@ -1,22 +1,73 @@
 import 'package:flutter/material.dart';
-import 'models/finance_model.dart'; // 1. ఇది చాలా ముఖ్యం (loadFinanceDataFromPrefs కోసం)
+import 'package:shared_preferences/shared_preferences.dart';
+import 'models/finance_model.dart';
 import 'screens/income_screen.dart';
 import 'screens/expence_screen.dart';
 import 'screens/shopping_screen.dart';
 import 'screens/assets_liabilities_screen.dart';
+import 'screens/reports_screen.dart';
+import 'screens/reminders_info_screen.dart';
+import 'screens/fixed_expenses_screen.dart';
+import 'screens/activation_screen.dart';
+
+// మీ అసలు అడ్మిన్ ఫోన్ నెంబర్ ఇక్కడ ఇవ్వండి
+const String adminPhoneNumber = "9876543210"; 
 
 void main() async {
-  // ఫ్లట్టర్ బైండింగ్స్ ఇనిషియలైజ్ చేయడం
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // 2. యాప్ స్టార్ట్ అవ్వగానే లోకల్ స్టోరేజ్ నుండి సేవ్ అయిన డేటాను మెమరీలోకి తెచ్చుకోవడం!
   await loadFinanceDataFromPrefs();
   
-  runApp(const FinanceApp());
+  bool isAllowed = await checkAppAccessPermission();
+
+  runApp(FinanceApp(isAllowed: isAllowed));
+}
+
+Future<bool> checkAppAccessPermission() async {
+  // ---------------------------------------------------------
+  // 🛠️ లాప్‌టాప్ టెస్టింగ్ మోడ్:
+  // ప్రస్తుతం టెస్ట్ చేయడానికి 'true' లో ఉంచండి. 
+  // మీరు ఫైనల్ APK బిల్డ్ చేసేటప్పుడు దీన్ని 'false' చేయాలి!
+  // ---------------------------------------------------------
+  bool isTestingOnLaptop = false; 
+  if (isTestingOnLaptop) {
+    return true; 
+  }
+
+  final prefs = await SharedPreferences.getInstance();
+  
+  // అడ్మిన్ ఫోన్ నెంబర్ చెకింగ్
+  String? savedPhone = prefs.getString('user_phone');
+  if (savedPhone == adminPhoneNumber) {
+    return true;
+  }
+
+  // సాధారణ యూజర్ కోసం ఆక్టివేషన్ & ఎక్స్‌పైరీ చెకింగ్
+  bool isActivated = prefs.getBool('is_activated') ?? false;
+  if (!isActivated) return false;
+
+  String? expiryStr = prefs.getString('app_expiry_date'); // Format: DDMMYYYY
+  if (expiryStr == null) return false;
+
+  try {
+    int day = int.parse(expiryStr.substring(0, 2));
+    int month = int.parse(expiryStr.substring(2, 4));
+    int year = int.parse(expiryStr.substring(4, 8));
+    DateTime expiryDate = DateTime(year, month, day, 23, 59, 59);
+
+    DateTime now = DateTime.now();
+    if (now.isBefore(expiryDate)) {
+      return true; // గడువు ఉంది
+    } else {
+      return false; // గడువు ముగిసింది
+    }
+  } catch (e) {
+    return false;
+  }
 }
 
 class FinanceApp extends StatelessWidget {
-  const FinanceApp({super.key});
+  final bool isAllowed;
+  const FinanceApp({super.key, required this.isAllowed});
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +78,7 @@ class FinanceApp extends StatelessWidget {
         primarySwatch: Colors.green,
         useMaterial3: true,
       ),
-      home: const MainDashboardScreen(),
+      home: isAllowed ? const MainDashboardScreen() : const ActivationScreen(),
     );
   }
 }
@@ -88,6 +139,39 @@ class MainDashboardScreen extends StatelessWidget {
             icon: Icons.account_balance,
             color: Colors.teal,
             destination: const AssetsLiabilitiesScreen(),
+          ),
+          const SizedBox(height: 16),
+
+          // 5. Financial Reports Card
+          _buildDashboardCard(
+            context,
+            title: 'Financial Reports',
+            subtitle: 'View overall income, expenses, net balance & category breakdown',
+            icon: Icons.bar_chart,
+            color: Colors.blue,
+            destination: const ReportsScreen(),
+          ),
+          const SizedBox(height: 16),
+
+          // 6. Reminders & General Information Card
+          _buildDashboardCard(
+            context,
+            title: 'Reminders & General Info',
+            subtitle: 'Manage your payment reminders and important notes',
+            icon: Icons.notifications_active,
+            color: Colors.indigo,
+            destination: const RemindersInfoScreen(),
+          ),
+          const SizedBox(height: 16),
+
+          // 7. Fixed Expenses & Fees Tracker Card
+          _buildDashboardCard(
+            context,
+            title: 'Fixed Expenses & Fees Tracker',
+            subtitle: 'Track school fees, bus fees & remaining balance for children',
+            icon: Icons.account_balance_wallet,
+            color: Colors.purple,
+            destination: const FixedExpensesScreen(),
           ),
         ],
       ),
