@@ -11,7 +11,7 @@ import 'screens/fixed_expenses_screen.dart';
 import 'screens/activation_screen.dart';
 
 // మీ అసలు అడ్మిన్ ఫోన్ నెంబర్ ఇక్కడ ఇవ్వండి
-const String adminPhoneNumber = "9876543210"; 
+const String adminPhoneNumber = "8985498085"; 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
