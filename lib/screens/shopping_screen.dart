@@ -12,7 +12,6 @@ class ShoppingItem {
   String qtyText;
   double rate;
   double amount;
-
   ShoppingItem({
     required this.id,
     required this.name,
@@ -22,7 +21,6 @@ class ShoppingItem {
     this.rate = 0.0,
     this.amount = 0.0,
   });
-
   void toggleUnitType() {
     if (unitType == 'Weight (Kg/g)') {
       unitType = 'Pocket';
@@ -32,13 +30,10 @@ class ShoppingItem {
       unitType = 'Weight (Kg/g)';
     }
   }
-
   void calculateAmount() {
     double qtyVal = _parseQty(qtyText, unitType);
     amount = qtyVal * rate;
   }
-
-  // Universal Smart Parser Logic for Weight, Pocket, and Number
   double _parseQty(String text, String type) {
     text = text.trim().toLowerCase();
     if (text.isEmpty) return 0.0;
@@ -60,7 +55,6 @@ class ShoppingItem {
     }
     return _parseSingleWeightQty(text);
   }
-
   double _parseSingleWeightQty(String text) {
     text = text.trim().toLowerCase();
     if (text.isEmpty) return 0.0;
@@ -141,9 +135,8 @@ List<RequiredListEntry> globalRequiredLists = [];
 // Local Storage Helpers for Shopping
 Future<void> saveShoppingDataToPrefs() async {
   final prefs = await SharedPreferences.getInstance();
-
-  // 1. Categories
-  List<Map<String, dynamic>> catData = globalCategories.map((c) => {
+  
+  var catData = globalCategories.map((c) => {
     'id': c.id,
     'name': c.name,
     'items': c.items.map((i) => {
@@ -154,15 +147,13 @@ Future<void> saveShoppingDataToPrefs() async {
   }).toList();
   await prefs.setString('saved_shopping_categories', jsonEncode(catData));
 
-  // 2. Shops
-  List<Map<String, dynamic>> shopData = globalShops.map((s) => {
+  var shopData = globalShops.map((s) => {
     'id': s.id,
     'name': s.name,
   }).toList();
   await prefs.setString('saved_shopping_shops', jsonEncode(shopData));
 
-  // 3. Required Lists
-  List<Map<String, dynamic>> reqData = globalRequiredLists.map((r) => {
+  var reqData = globalRequiredLists.map((r) => {
     'id': r.id,
     'date': r.date,
     'shopName': r.shopName,
@@ -183,8 +174,6 @@ Future<void> saveShoppingDataToPrefs() async {
 
 Future<void> loadShoppingDataFromPrefs() async {
   final prefs = await SharedPreferences.getInstance();
-
-  // 1. Categories Load
   String? catStr = prefs.getString('saved_shopping_categories');
   if (catStr != null) {
     List<dynamic> decodedCats = jsonDecode(catStr);
@@ -198,14 +187,12 @@ Future<void> loadShoppingDataFromPrefs() async {
     }).toList();
   }
 
-  // 2. Shops Load
   String? shopStr = prefs.getString('saved_shopping_shops');
   if (shopStr != null) {
     List<dynamic> decodedShops = jsonDecode(shopStr);
     globalShops = decodedShops.map((sMap) => ShopModel(id: sMap['id'], name: sMap['name'])).toList();
   }
 
-  // 3. Required Lists Load
   String? reqStr = prefs.getString('saved_shopping_required_lists');
   if (reqStr != null) {
     List<dynamic> decodedReqs = jsonDecode(reqStr);
@@ -234,7 +221,6 @@ Future<void> loadShoppingDataFromPrefs() async {
 // --- Main Shopping Dashboard Screen ---
 class ShoppingScreen extends StatefulWidget {
   const ShoppingScreen({super.key});
-
   @override
   State<ShoppingScreen> createState() => _ShoppingScreenState();
 }
@@ -287,15 +273,6 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
             icon: Icons.check_box,
             color: Colors.green,
             destination: const RequiredItemsScreen(),
-          ),
-          const SizedBox(height: 16),
-          _buildDashboardCard(
-            context,
-            title: 'Rate Comparison List',
-            subtitle: 'Compare item rates',
-            icon: Icons.compare_arrows, // ఎర్రర్ రాకుండా ఇక్కడ మార్చబడింది
-            color: Colors.purple,
-            destination: const RateComparisonScreen(),
           ),
         ],
       ),
@@ -353,7 +330,6 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
 // --- Screen 1: Categories & Items Management ---
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
-
   @override
   State<CategoriesScreen> createState() => _CategoriesScreenState();
 }
@@ -461,7 +437,6 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 class CategoryItemsDetailScreen extends StatefulWidget {
   final CategoryModel category;
   const CategoryItemsDetailScreen({super.key, required this.category});
-
   @override
   State<CategoryItemsDetailScreen> createState() => _CategoryItemsDetailScreenState();
 }
@@ -596,7 +571,6 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
 // --- Screen 3: Shop Selection Screen ---
 class ShopSelectionScreen extends StatefulWidget {
   const ShopSelectionScreen({super.key});
-
   @override
   State<ShopSelectionScreen> createState() => _ShopSelectionScreenState();
 }
@@ -691,7 +665,6 @@ class _ShopSelectionScreenState extends State<ShopSelectionScreen> {
 // --- Screen 4: Required Items / To-Buy List Screen ---
 class RequiredItemsScreen extends StatefulWidget {
   const RequiredItemsScreen({super.key});
-
   @override
   State<RequiredItemsScreen> createState() => _RequiredItemsScreenState();
 }
@@ -699,12 +672,12 @@ class RequiredItemsScreen extends StatefulWidget {
 class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
   String _getListText(RequiredListEntry entry) {
     String text = "========================================\n";
-    text += "         SHOPPING BILL REPORT         \n";
+    text += "        SHOPPING BILL REPORT        \n";
     text += "========================================\n";
     text += "Date : ${entry.date}\n";
     text += "Shop : ${entry.shopName ?? 'N/A'}\n";
     text += "----------------------------------------\n";
-    text += "Item Name          Qty & Unit    Amount\n";
+    text += "Item Name         Qty & Unit    Amount\n";
     text += "----------------------------------------\n";
     for (var item in entry.selectedItems) {
       String name = item.name.padRight(18, ' ');
@@ -805,12 +778,32 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
                 final entry = globalRequiredLists[index];
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: ExpansionTile(
+                  child: ListTile(
                     title: Text('Date: ${entry.date} | Shop: ${entry.shopName ?? 'N/A'}', style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text('Total Amount: ₹${entry.grandTotal.toStringAsFixed(2)}'),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ViewRequiredListDetailsScreen(entry: entry),
+                        ),
+                      ).then((_) => setState(() {}));
+                    },
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          icon: const Icon(Icons.visibility, color: Colors.teal),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => ViewRequiredListDetailsScreen(entry: entry),
+                              ),
+                            ).then((_) => setState(() {}));
+                          },
+                          tooltip: 'View & Edit Details',
+                        ),
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
                           onPressed: () {
@@ -824,6 +817,7 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
                               setState(() {});
                             });
                           },
+                          tooltip: 'Edit List',
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete, color: Colors.red),
@@ -833,6 +827,7 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
                             });
                             await saveShoppingDataToPrefs();
                           },
+                          tooltip: 'Delete List',
                         ),
                         IconButton(
                           icon: const Icon(Icons.share, color: Colors.green),
@@ -846,13 +841,6 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
                         ),
                       ],
                     ),
-                    children: entry.selectedItems.map((item) {
-                      return ListTile(
-                        title: Text(item.name),
-                        subtitle: Text('Unit: ${item.unitType} | Qty: ${item.qtyText} | Rate: ₹${item.rate}'),
-                        trailing: Text('₹${item.amount.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      );
-                    }).toList(),
                   ),
                 );
               },
@@ -877,11 +865,227 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
   }
 }
 
-// --- Screen 5: Form to Create/Edit Required List ---
+// --- Screen 5: View & Interactive Edit Details Screen ---
+class ViewRequiredListDetailsScreen extends StatefulWidget {
+  final RequiredListEntry entry;
+  const ViewRequiredListDetailsScreen({super.key, required this.entry});
+
+  @override
+  State<ViewRequiredListDetailsScreen> createState() => _ViewRequiredListDetailsScreenState();
+}
+
+class _ViewRequiredListDetailsScreenState extends State<ViewRequiredListDetailsScreen> {
+  final Map<String, TextEditingController> _qtyControllers = {};
+  final Map<String, TextEditingController> _rateControllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    for (var item in widget.entry.selectedItems) {
+      _qtyControllers[item.id] = TextEditingController(text: item.qtyText);
+      _rateControllers[item.id] = TextEditingController(text: item.rate == 0 ? '' : item.rate.toString());
+    }
+  }
+
+  void _recalculateAndUpdate() async {
+    double total = 0.0;
+    for (var item in widget.entry.selectedItems) {
+      item.calculateAmount();
+      total += item.amount;
+    }
+    setState(() {
+      widget.entry.grandTotal = total;
+    });
+    await saveShoppingDataToPrefs();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('View & Update List Details'),
+        backgroundColor: Colors.teal,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Date (dd-mm-yyyy)',
+                border: OutlineInputBorder(),
+              ),
+              child: Text(widget.entry.date, style: const TextStyle(fontSize: 16)),
+            ),
+            const SizedBox(height: 12),
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Shop Name',
+                border: OutlineInputBorder(),
+              ),
+              child: Text(widget.entry.shopName ?? 'N/A', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+            const SizedBox(height: 12),
+            InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Item Category',
+                border: OutlineInputBorder(),
+              ),
+              child: Text(widget.entry.categoryName ?? 'All Categories', style: const TextStyle(fontSize: 16)),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Selected Items, Qty & Rate (Editable):',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: widget.entry.selectedItems.isEmpty
+                  ? const Center(child: Text('No items selected in this list.'))
+                  : ListView.builder(
+                      itemCount: widget.entry.selectedItems.length,
+                      itemBuilder: (context, index) {
+                        final item = widget.entry.selectedItems[index];
+                        String dynamicHint = '1/2, 2*200gm, 1kg';
+                        if (item.unitType == 'Pocket') {
+                          dynamicHint = '1, 2*200gm, 2';
+                        } else if (item.unitType == 'Number (No)') {
+                          dynamicHint = '10, 2*10';
+                        }
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.check_box, color: Colors.teal),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.name,
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      InkWell(
+                                        onTap: () {
+                                          setState(() {
+                                            item.toggleUnitType();
+                                            _recalculateAndUpdate();
+                                          });
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: Colors.teal[100],
+                                            borderRadius: BorderRadius.circular(3),
+                                            border: Border.all(color: Colors.teal),
+                                          ),
+                                          child: Text(
+                                            item.unitType,
+                                            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: Colors.teal),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  flex: 1,
+                                  child: TextField(
+                                    controller: _qtyControllers[item.id],
+                                    decoration: InputDecoration(
+                                      labelText: 'Qty',
+                                      hintText: dynamicHint,
+                                      isDense: true,
+                                      border: const OutlineInputBorder(),
+                                    ),
+                                    onChanged: (val) {
+                                      setState(() {
+                                        item.qtyText = val;
+                                        _recalculateAndUpdate();
+                                      });
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  flex: 1,
+                                  child: TextField(
+                                    controller: _rateControllers[item.id],
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Rate',
+                                      isDense: true,
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    onChanged: (val) {
+                                      setState(() {
+                                        item.rate = double.tryParse(val) ?? 0.0;
+                                        _recalculateAndUpdate();
+                                      });
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  flex: 1,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.grey),
+                                      borderRadius: BorderRadius.circular(4),
+                                      color: Colors.grey[100],
+                                    ),
+                                    child: Text(
+                                      '₹${item.amount.toStringAsFixed(2)}',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.teal[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.teal),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Grand Total:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(
+                    '₹${widget.entry.grandTotal.toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- Screen 6: Form to Create/Edit Required List ---
 class CreateRequiredListScreen extends StatefulWidget {
   final RequiredListEntry? editingEntry;
   const CreateRequiredListScreen({super.key, this.editingEntry});
-
   @override
   State<CreateRequiredListScreen> createState() => _CreateRequiredListScreenState();
 }
@@ -1332,27 +1536,6 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// --- Screen 6: Rate Comparison Screen ---
-class RateComparisonScreen extends StatelessWidget {
-  const RateComparisonScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Rate Comparison List'),
-        backgroundColor: Colors.purple,
-      ),
-      body: const Center(
-        child: Text(
-          'No comparison data available.',
-          style: TextStyle(fontSize: 16, color: Colors.grey),
         ),
       ),
     );

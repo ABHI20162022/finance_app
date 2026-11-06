@@ -28,7 +28,7 @@ Future<bool> checkAppAccessPermission() async {
   // ప్రస్తుతం టెస్ట్ చేయడానికి 'true' లో ఉంచండి. 
   // మీరు ఫైనల్ APK బిల్డ్ చేసేటప్పుడు దీన్ని 'false' చేయాలి!
   // ---------------------------------------------------------
-  bool isTestingOnLaptop = false; 
+  bool isTestingOnLaptop = true; 
   if (isTestingOnLaptop) {
     return true; 
   }

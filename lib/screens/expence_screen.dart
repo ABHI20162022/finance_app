@@ -5,7 +5,6 @@ import '../models/finance_model.dart';
 
 class ExpenceScreen extends StatefulWidget {
   const ExpenceScreen({super.key});
-
   @override
   State<ExpenceScreen> createState() => _ExpenceScreenState();
 }
@@ -14,20 +13,32 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   final TextEditingController fromDateController = TextEditingController();
   final TextEditingController toDateController = TextEditingController();
 
+  String? selectedFilterPerson;
+  String? selectedFilterCategory;
+
+  String? selectedFilterPaidBy;
+  String? selectedFilterPaidByCategory;
+
   @override
   void initState() {
     super.initState();
+    _setDefaultMonthDates();
     _loadDataAndRefresh();
   }
 
-  // Local Storage నుండి డేటా లోడ్ చేయడానికి
+  void _setDefaultMonthDates() {
+    DateTime now = DateTime.now();
+    DateTime firstDayOfMonth = DateTime(now.year, now.month, 1);
+    
+    fromDateController.text = "${firstDayOfMonth.day.toString().padLeft(2, '0')}-${firstDayOfMonth.month.toString().padLeft(2, '0')}-${firstDayOfMonth.year}";
+    toDateController.text = "${now.day.toString().padLeft(2, '0')}-${now.month.toString().padLeft(2, '0')}-${now.year}";
+  }
+
   Future<void> _loadDataAndRefresh() async {
     final prefs = await SharedPreferences.getInstance();
-    
-    // 1. Persons & Entries Load చేయడం
     String? personsStr = prefs.getString('saved_global_persons');
     if (personsStr != null) {
-      List<dynamic> decodedPersons = jsonDecode(personsStr);
+      List decodedPersons = jsonDecode(personsStr);
       globalPersons = decodedPersons.map((pMap) {
         var entriesList = (pMap['entries'] as List? ?? []).map((eMap) => FinanceItem(
           id: eMap['id'],
@@ -39,9 +50,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
           date: eMap['date'],
           description: eMap['description'] ?? '',
         )).toList();
-
         var banksList = List<String>.from(pMap['bankAccounts'] ?? []);
-
         return PersonData(
           id: pMap['id'],
           name: pMap['name'],
@@ -50,11 +59,9 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
         );
       }).toList();
     }
-
-    // 2. Expense Categories Load చేయడం
     String? categoriesStr = prefs.getString('saved_expense_categories');
     if (categoriesStr != null) {
-      List<dynamic> decodedCats = jsonDecode(categoriesStr);
+      List decodedCats = jsonDecode(categoriesStr);
       globalExpenseCategories = decodedCats.map((cMap) {
         return ExpenseCategoryData(
           name: cMap['name'],
@@ -62,16 +69,13 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
         );
       }).toList();
     }
-
     setState(() {});
   }
 
-  // ఫోన్‌లో డేటాను పర్మినెంట్‌గా సేవ్ చేయడానికి
   Future<void> _saveDataToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-
-    // Persons & Entries Mapping
-    List<Map<String, dynamic>> personsData = globalPersons.map((p) => {
+    
+    var personsData = globalPersons.map((p) => {
       'id': p.id,
       'name': p.name,
       'bankAccounts': p.bankAccounts,
@@ -86,9 +90,8 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
         'description': e.description,
       }).toList(),
     }).toList();
-
-    // Categories Mapping
-    List<Map<String, dynamic>> categoriesData = globalExpenseCategories.map((c) => {
+    
+    var categoriesData = globalExpenseCategories.map((c) => {
       'name': c.name,
       'subCategories': c.subCategories,
     }).toList();
@@ -130,11 +133,13 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   }
 
   bool _isExpenseEntry(FinanceItem entry) {
-    return entry.amount < 0;
+    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') || entry.category.toLowerCase().contains('transfer');
+    return (entry.amount < 0 || entry.amount == 0.0) && !isJournalOrTransfer;
   }
 
   bool _isIncomeEntry(FinanceItem entry) {
-    return entry.amount > 0;
+    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') || entry.category.toLowerCase().contains('transfer');
+    return entry.amount > 0 && !isJournalOrTransfer;
   }
 
   void _showExpensePersonDialog({PersonData? person}) {
@@ -165,7 +170,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                     person.name = controller.text.trim();
                   }
                 });
-                await _saveDataToPrefs(); // డేటా సేవ్ అవ్వడానికి
+                await _saveDataToPrefs();
                 Navigator.pop(context);
               }
             },
@@ -202,7 +207,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                     globalExpenseCategories[index].name = name;
                   }
                 });
-                await _saveDataToPrefs(); // డేటా సేవ్ అవ్వడానికి
+                await _saveDataToPrefs();
                 Navigator.pop(context);
               }
             },
@@ -217,32 +222,92 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   Widget build(BuildContext context) {
     double totalExpenses = 0;
     double totalIncome = 0;
+    
+    List allStatementEntries = [];
+    List allPaidByEntries = [];
+
     for (var person in globalPersons) {
       for (var entry in person.entries) {
         if (_isDateInRange(entry.date)) {
           if (_isExpenseEntry(entry)) {
             totalExpenses += entry.amount.abs();
+            
+            String paidBy = person.name;
+            String narration = entry.description;
+            if (entry.description.contains("Paid by ")) {
+              try {
+                var parts = entry.description.split(" | ");
+                paidBy = parts[0].replaceAll("Paid by ", "").trim();
+                narration = parts.length > 1 ? parts.sublist(1).join(" | ") : "";
+              } catch (_) {}
+            }
+
+            allStatementEntries.add({
+              'entry': entry,
+              'date': entry.date,
+              'expensePerson': entry.person,
+              'category': entry.category,
+              'paidBy': paidBy,
+              'narration': narration,
+              'amount': entry.amount.abs(),
+            });
+
+            allPaidByEntries.add({
+              'entry': entry,
+              'date': entry.date,
+              'expensePerson': entry.person,
+              'category': entry.category,
+              'paidBy': paidBy,
+              'account': entry.depositAccount,
+              'narration': narration,
+              'amount': entry.amount.abs(),
+            });
+
           } else if (_isIncomeEntry(entry)) {
             totalIncome += entry.amount;
           }
         }
       }
     }
+
     double netBalance = totalIncome - totalExpenses;
+
+    List filteredStatement = allStatementEntries.where((item) {
+      FinanceItem e = item['entry'];
+      bool matchesPerson = selectedFilterPerson == null || selectedFilterPerson == 'All' || e.person == selectedFilterPerson;
+      bool matchesCategory = selectedFilterCategory == null || selectedFilterCategory == 'All' || e.category.startsWith(selectedFilterCategory!);
+      return matchesPerson && matchesCategory;
+    }).toList();
+
+    double statementTotalAmount = filteredStatement.fold(0.0, (sum, item) => sum + (item['amount'] as double));
+
+    List filteredPaidByStatement = allPaidByEntries.where((item) {
+      FinanceItem e = item['entry'];
+      String paidByPerson = item['paidBy'].toString();
+      bool matchesPaidBy = selectedFilterPaidBy == null || selectedFilterPaidBy == 'All' || paidByPerson == selectedFilterPaidBy;
+      bool matchesCategory = selectedFilterPaidByCategory == null || selectedFilterPaidByCategory == 'All' || e.category.startsWith(selectedFilterPaidByCategory!);
+      return matchesPaidBy && matchesCategory;
+    }).toList();
+
+    double totalPaidAmount = filteredPaidByStatement.fold(0.0, (sum, item) => sum + (item['amount'] as double));
+
     return DefaultTabController(
-      length: 2,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Expense Management & Balance', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text('Expense Management & Statements', style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: Colors.red.shade700,
           foregroundColor: Colors.white,
           bottom: const TabBar(
+            isScrollable: true,
             indicatorColor: Colors.white,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             tabs: [
-              Tab(icon: Icon(Icons.person), text: 'Expense Persons'),
-              Tab(icon: Icon(Icons.category), text: 'Expense Categories'),
+              Tab(icon: Icon(Icons.person), text: 'Persons'),
+              Tab(icon: Icon(Icons.category), text: 'Categories'),
+              Tab(icon: Icon(Icons.receipt_long), text: 'Expense Statement'),
+              Tab(icon: Icon(Icons.payment), text: 'Paid By Statement'),
             ],
           ),
         ),
@@ -292,7 +357,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
             ),
             Container(
               color: Colors.red.shade50,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: Row(
                 children: [
                   Expanded(
@@ -310,24 +375,21 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                       onChanged: (val) => setState(() {}),
                     ),
                   ),
-                  if (fromDateController.text.isNotEmpty || toDateController.text.isNotEmpty) ...[
-                    IconButton(
-                      icon: const Icon(Icons.clear, color: Colors.red, size: 20),
-                      onPressed: () {
-                        setState(() {
-                          fromDateController.clear();
-                          toDateController.clear();
-                        });
-                      },
-                    )
-                  ]
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.red, size: 20),
+                    onPressed: () {
+                      setState(() {
+                        _setDefaultMonthDates();
+                      });
+                    },
+                  )
                 ],
               ),
             ),
             Expanded(
               child: TabBarView(
                 children: [
-                  // Tab 1: Expense Persons
+                  // Tab 1: Persons
                   Padding(
                     padding: const EdgeInsets.all(12.0),
                     child: Column(
@@ -348,12 +410,12 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                         const SizedBox(height: 8),
                         Expanded(
                           child: globalPersons.isEmpty
-                              ? const Center(child: Text('No persons added yet.\nClick "+ Add Person" to start.', textAlign: TextAlign.center))
+                              ? const Center(child: Text('No persons added yet.'))
                               : ListView.builder(
                                   itemCount: globalPersons.length,
                                   itemBuilder: (context, index) {
                                     final person = globalPersons[index];
-                                    double personExpense = person.entries.where((e) => _isExpenseEntry(e) && _isDateInRange(e.date)).fold(0.0, (sum, e) => sum + e.amount.abs());
+                                    double personExpense = person.entries.where((e) => _isExpenseEntry(e) && _isDateInRange(e.date) && e.person == person.name).fold(0.0, (sum, e) => sum + e.amount.abs());
                                     return Card(
                                       elevation: 2,
                                       margin: const EdgeInsets.only(bottom: 8),
@@ -401,7 +463,8 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                       ],
                     ),
                   ),
-                  // Tab 2: Expense Categories
+
+                  // Tab 2: Categories
                   Padding(
                     padding: const EdgeInsets.all(12.0),
                     child: Column(
@@ -422,7 +485,7 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                         const SizedBox(height: 8),
                         Expanded(
                           child: globalExpenseCategories.isEmpty
-                              ? const Center(child: Text('No expense categories added yet.\nClick "+ Add Category" to create one.', textAlign: TextAlign.center))
+                              ? const Center(child: Text('No expense categories added yet.'))
                               : ListView.builder(
                                   itemCount: globalExpenseCategories.length,
                                   itemBuilder: (context, index) {
@@ -480,6 +543,211 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                       ],
                     ),
                   ),
+
+                  // Tab 3: Expense Statement
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: selectedFilterPerson ?? 'All',
+                                decoration: const InputDecoration(labelText: 'Filter Person', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.all(8)),
+                                items: ['All', ...globalPersons.map((p) => p.name)].map((name) => DropdownMenuItem(value: name, child: Text(name))).toList(),
+                                onChanged: (val) {
+                                  setState(() {
+                                    selectedFilterPerson = val;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: selectedFilterCategory ?? 'All',
+                                decoration: const InputDecoration(labelText: 'Filter Category', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.all(8)),
+                                items: ['All', ...globalExpenseCategories.map((c) => c.name)].map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
+                                onChanged: (val) {
+                                  setState(() {
+                                    selectedFilterCategory = val;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: filteredStatement.isEmpty
+                              ? const Center(child: Text('No statement records found.'))
+                              : SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Table(
+                                      border: TableBorder.all(color: Colors.grey.shade300),
+                                      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                                      columnWidths: const {
+                                        0: IntrinsicColumnWidth(),
+                                        1: IntrinsicColumnWidth(),
+                                        2: IntrinsicColumnWidth(),
+                                        3: IntrinsicColumnWidth(),
+                                        4: IntrinsicColumnWidth(),
+                                        5: IntrinsicColumnWidth(),
+                                      },
+                                      children: [
+                                        TableRow(
+                                          decoration: BoxDecoration(color: Colors.red.shade700),
+                                          children: const [
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Date', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Expense Person', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Category', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Paid By', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Narration', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Amount (₹)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                          ],
+                                        ),
+                                        ...filteredStatement.map((row) {
+                                          return TableRow(
+                                            children: [
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['date'].toString())),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['expensePerson'].toString(), style: const TextStyle(fontWeight: FontWeight.w600))),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['category'].toString())),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['paidBy'].toString())),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['narration'].toString().isEmpty ? '-' : row['narration'].toString())),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text('₹${(row['amount'] as double).toStringAsFixed(2)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                                            ],
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade100,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.red.shade300),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Statement Total Expense:', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87)),
+                              Text('₹${statementTotalAmount.toStringAsFixed(2)}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+                            ],
+                          ),
+                        )
+                      ],
+                    ),
+                  ),
+
+                  // Tab 4: Paid By Statement
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: selectedFilterPaidBy ?? 'All',
+                                decoration: const InputDecoration(labelText: 'Filter Payer', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.all(8)),
+                                items: ['All', ...globalPersons.map((p) => p.name)].map((name) => DropdownMenuItem(value: name, child: Text(name))).toList(),
+                                onChanged: (val) {
+                                  setState(() {
+                                    selectedFilterPaidBy = val;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: selectedFilterPaidByCategory ?? 'All',
+                                decoration: const InputDecoration(labelText: 'Filter Category', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.all(8)),
+                                items: ['All', ...globalExpenseCategories.map((c) => c.name)].map((cat) => DropdownMenuItem(value: cat, child: Text(cat))).toList(),
+                                onChanged: (val) {
+                                  setState(() {
+                                    selectedFilterPaidByCategory = val;
+                                  });
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: filteredPaidByStatement.isEmpty
+                              ? const Center(child: Text('No paid-by records found.'))
+                              : SingleChildScrollView(
+                                  scrollDirection: Axis.vertical,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Table(
+                                      border: TableBorder.all(color: Colors.grey.shade300),
+                                      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                                      columnWidths: const {
+                                        0: IntrinsicColumnWidth(),
+                                        1: IntrinsicColumnWidth(),
+                                        2: IntrinsicColumnWidth(),
+                                        3: IntrinsicColumnWidth(),
+                                        4: IntrinsicColumnWidth(),
+                                        5: IntrinsicColumnWidth(),
+                                        6: IntrinsicColumnWidth(),
+                                      },
+                                      children: [
+                                        TableRow(
+                                          decoration: BoxDecoration(color: Colors.red.shade700),
+                                          children: const [
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Date', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Paid By Payer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('For Person', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Category', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Account', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Narration', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                            Padding(padding: EdgeInsets.all(8.0), child: Text('Amount Paid (₹)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
+                                          ],
+                                        ),
+                                        ...filteredPaidByStatement.map((row) {
+                                          return TableRow(
+                                            children: [
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['date'].toString())),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['paidBy'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue))),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['expensePerson'].toString(), style: const TextStyle(fontWeight: FontWeight.w600))),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['category'].toString())),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['account'].toString())),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text(row['narration'].toString().isEmpty ? '-' : row['narration'].toString())),
+                                              Padding(padding: const EdgeInsets.all(8.0), child: Text('₹${(row['amount'] as double).toStringAsFixed(2)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                                            ],
+                                          );
+                                        }),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade100,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.red.shade300),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Total Amount Paid by Payer:', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87)),
+                              Text('₹${totalPaidAmount.toStringAsFixed(2)}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+                            ],
+                          ),
+                        )
+                      ],
+                    ),
+                  )
                 ],
               ),
             ),
@@ -502,7 +770,8 @@ class ExpenseCategoryDetailScreen extends StatefulWidget {
 class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScreen> {
   Future<void> _saveDataToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    List<Map<String, dynamic>> personsData = globalPersons.map((p) => {
+    
+    var personsData = globalPersons.map((p) => {
       'id': p.id,
       'name': p.name,
       'bankAccounts': p.bankAccounts,
@@ -517,8 +786,8 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
         'description': e.description,
       }).toList(),
     }).toList();
-
-    List<Map<String, dynamic>> categoriesData = globalExpenseCategories.map((c) => {
+    
+    var categoriesData = globalExpenseCategories.map((c) => {
       'name': c.name,
       'subCategories': c.subCategories,
     }).toList();
@@ -557,6 +826,24 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
       if (entryDate.isAfter(end)) return false;
     }
     return true;
+  }
+
+  bool _isExpenseEntry(FinanceItem entry) {
+    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') || entry.category.toLowerCase().contains('transfer');
+    return (entry.amount < 0 || entry.amount == 0.0) && !isJournalOrTransfer;
+  }
+
+  double _getAccountBalance(PersonData person, String accountName) {
+    if (accountName == 'Cash') return double.infinity; // Cash has no balance limit check
+    double balance = 0;
+    for (var p in globalPersons) {
+      for (var e in p.entries) {
+        if (e.depositAccount == accountName) {
+          balance += e.amount;
+        }
+      }
+    }
+    return balance;
   }
 
   void _showAddPersonDialog(StateSetter dialogSetState, Function(String) onPersonAdded) {
@@ -630,12 +917,26 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
     } else if (widget.categoryData.subCategories.isNotEmpty) {
       selectedSubCategory = widget.categoryData.subCategories.first;
     }
-    String selectedWhoPaid = existingItem?.person ?? (globalPersons.isNotEmpty ? globalPersons.first.name : '');
+    
+    String selectedWhoPaid = globalPersons.isNotEmpty ? globalPersons.first.name : '';
+    if (existingItem != null && existingItem.description.contains("Paid by ")) {
+      try {
+        String payerName = existingItem.description.split("Paid by ")[1].split(" | ")[0].trim();
+        if (globalPersons.any((p) => p.name == payerName)) {
+          selectedWhoPaid = payerName;
+        }
+      } catch (_) {}
+    }
+
     String selectedAccount = existingItem?.depositAccount ?? 'Cash';
     final dateController = TextEditingController(
       text: existingItem?.date ?? "${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}",
     );
-    final descController = TextEditingController(text: existingItem?.description ?? '');
+    final descController = TextEditingController(
+      text: existingItem != null && existingItem.description.contains(" | ") 
+          ? existingItem.description.split(" | ").last 
+          : (existingItem?.description ?? '')
+    );
     final amountController = TextEditingController(text: existingItem != null ? existingItem.amount.abs().toString() : '');
     
     showDialog(
@@ -666,7 +967,7 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: globalPersons.any((p) => p.name == selectedExpensePerson) ? selectedExpensePerson : (globalPersons.isNotEmpty ? globalPersons.first.name : null),
-                            decoration: const InputDecoration(labelText: 'Expense Person', border: OutlineInputBorder()),
+                            decoration: const InputDecoration(labelText: 'Expense Person (Statement)', border: OutlineInputBorder()),
                             items: globalPersons.map((p) => DropdownMenuItem(value: p.name, child: Text(p.name))).toList(),
                             onChanged: (val) {
                               setDialogState(() {
@@ -801,7 +1102,7 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: globalPersons.any((p) => p.name == selectedWhoPaid) ? selectedWhoPaid : (globalPersons.isNotEmpty ? globalPersons.first.name : null),
-                            decoration: const InputDecoration(labelText: 'Who Paid', border: OutlineInputBorder()),
+                            decoration: const InputDecoration(labelText: 'Who Paid (Deduction Target)', border: OutlineInputBorder()),
                             items: globalPersons.map((p) => DropdownMenuItem(value: p.name, child: Text(p.name))).toList(),
                             onChanged: (val) {
                               setDialogState(() {
@@ -848,7 +1149,7 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                     const SizedBox(height: 12),
                     TextField(controller: dateController, decoration: const InputDecoration(labelText: 'Date (dd-mm-yyyy)', border: OutlineInputBorder())),
                     const SizedBox(height: 12),
-                    TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description (Optional)', border: OutlineInputBorder())),
+                    TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description / Narration', border: OutlineInputBorder())),
                     const SizedBox(height: 12),
                     TextField(controller: amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder())),
                   ],
@@ -867,42 +1168,67 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
                   onPressed: () async {
-                    if (amountController.text.trim().isNotEmpty && selectedExpensePerson.isNotEmpty) {
+                    if (amountController.text.trim().isNotEmpty && selectedWhoPaid.isNotEmpty && selectedExpensePerson.isNotEmpty) {
                       double amt = double.tryParse(amountController.text.trim()) ?? 0.0;
+                      
+                      // Check if it is a Loan, Credit Card or Borrowing category (Directly save without balance check)
+                      bool isSpecialCategory = selectedCategoryName.toLowerCase().contains('loan') ||
+                                              selectedCategoryName.toLowerCase().contains('credit') ||
+                                              selectedCategoryName.toLowerCase().contains('appulu') ||
+                                              selectedCategoryName.toLowerCase().contains('debt') ||
+                                              selectedCategoryName.toLowerCase().contains('borrow');
+
+                      // Check account balance if not Cash and not special category
+                      if (!isSpecialCategory && selectedAccount != 'Cash') {
+                        double currentAccBal = _getAccountBalance(payerPerson, selectedAccount);
+                        if (currentAccBal < amt) {
+                          // Show Warning Dialog with OK and Cancel
+                          bool? confirmProceed = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Warning: Low Balance'),
+                              content: Text('Account "$selectedAccount" has insufficient balance (Available: ₹${currentAccBal.toStringAsFixed(2)}, Expense: ₹${amt.toStringAsFixed(2)}). Do you still want to proceed?'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('OK'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (confirmProceed != true) {
+                            return; // Cancel entry
+                          }
+                        }
+                      }
+
                       String fullCategoryName = selectedSubCategory == 'General' ? selectedCategoryName : "$selectedCategoryName - $selectedSubCategory";
                       
                       setState(() {
-                        PersonData target = globalPersons.firstWhere((p) => p.name == selectedExpensePerson);
-                        if (existingItem == null) {
-                          target.entries.add(
-                            FinanceItem(
-                              id: DateTime.now().toString(),
-                              title: fullCategoryName,
-                              amount: -amt.abs(),
-                              person: selectedExpensePerson,
-                              category: fullCategoryName,
-                              depositAccount: selectedAccount,
-                              date: dateController.text.trim(),
-                              description: descController.text.trim(),
-                            ),
-                          );
-                        } else {
+                        if (existingItem != null) {
                           for (var p in globalPersons) {
                             p.entries.removeWhere((e) => e.id == existingItem.id);
                           }
-                          target.entries.add(
-                            FinanceItem(
-                              id: existingItem.id,
-                              title: fullCategoryName,
-                              amount: -amt.abs(),
-                              person: selectedExpensePerson,
-                              category: fullCategoryName,
-                              depositAccount: selectedAccount,
-                              date: dateController.text.trim(),
-                              description: descController.text.trim(),
-                            ),
-                          );
                         }
+
+                        String uniqueId = existingItem?.id ?? DateTime.now().toString();
+
+                        PersonData payerTarget = globalPersons.firstWhere((p) => p.name == selectedWhoPaid);
+                        payerTarget.entries.add(
+                          FinanceItem(
+                            id: uniqueId,
+                            title: fullCategoryName,
+                            amount: -amt.abs(),
+                            person: selectedExpensePerson,
+                            category: fullCategoryName,
+                            depositAccount: selectedAccount,
+                            date: dateController.text.trim(),
+                            description: "Paid by $selectedWhoPaid | ${descController.text.trim()}",
+                          ),
+                        );
                       });
                       await _saveDataToPrefs();
                       Navigator.pop(context);
@@ -923,7 +1249,7 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
     List<FinanceItem> categoryEntries = [];
     for (var p in globalPersons) {
       for (var e in p.entries) {
-        if (e.category.startsWith(widget.categoryData.name) && _isDateInRange(e.date) && e.amount < 0) {
+        if (e.category.startsWith(widget.categoryData.name) && _isDateInRange(e.date) && _isExpenseEntry(e)) {
           categoryEntries.add(e);
         }
       }
@@ -1055,7 +1381,8 @@ class ExpensePersonDetailScreen extends StatefulWidget {
 class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
   Future<void> _saveDataToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    List<Map<String, dynamic>> personsData = globalPersons.map((p) => {
+    
+    var personsData = globalPersons.map((p) => {
       'id': p.id,
       'name': p.name,
       'bankAccounts': p.bankAccounts,
@@ -1070,8 +1397,8 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
         'description': e.description,
       }).toList(),
     }).toList();
-
-    List<Map<String, dynamic>> categoriesData = globalExpenseCategories.map((c) => {
+    
+    var categoriesData = globalExpenseCategories.map((c) => {
       'name': c.name,
       'subCategories': c.subCategories,
     }).toList();
@@ -1113,7 +1440,8 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
   }
 
   bool _isExpenseEntry(FinanceItem entry) {
-    return entry.amount < 0;
+    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') || entry.category.toLowerCase().contains('transfer');
+    return entry.amount < 0 && !isJournalOrTransfer;
   }
 
   void _showAddBankDialog() {
@@ -1145,7 +1473,15 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final displayExpenseEntries = widget.person.entries.where((e) => _isExpenseEntry(e) && _isDateInRange(e.date)).toList();
+    List<FinanceItem> displayExpenseEntries = [];
+    for (var p in globalPersons) {
+      for (var e in p.entries) {
+        if (_isExpenseEntry(e) && _isDateInRange(e.date) && e.person == widget.person.name) {
+          displayExpenseEntries.add(e);
+        }
+      }
+    }
+
     double personTotalExpense = displayExpenseEntries.fold(0.0, (sum, item) => sum + item.amount.abs());
     return Scaffold(
       appBar: AppBar(
@@ -1206,7 +1542,9 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
                             trailing: InkWell(
                               onTap: () async {
                                 setState(() {
-                                  widget.person.entries.removeWhere((e) => e.id == entry.id);
+                                  for (var p in globalPersons) {
+                                    p.entries.removeWhere((e) => e.id == entry.id);
+                                  }
                                 });
                                 await _saveDataToPrefs();
                               },

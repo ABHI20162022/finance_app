@@ -61,16 +61,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget build(BuildContext context) {
     double totalIncome = 0;
     double totalExpenses = 0;
-    double totalLoanAmount = 0;
 
     for (var person in globalPersons) {
       for (var entry in person.entries) {
         if (_isDateInRange(entry.date)) {
           if (entry.amount > 0) {
             totalIncome += entry.amount;
-            if (entry.category.toLowerCase().contains('loan') || entry.title.toLowerCase().contains('loan')) {
-              totalLoanAmount += entry.amount;
-            }
           } else if (entry.amount < 0) {
             totalExpenses += entry.amount.abs();
           }
@@ -88,7 +84,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ),
       body: Column(
         children: [
-          // డేట్ ఫిల్టర్
           Container(
             color: Colors.green.shade50,
             padding: const EdgeInsets.all(8),
@@ -137,8 +132,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ],
             ),
           ),
-
-          // ఓవరాల్ సమ్మరీ కార్డ్స్
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: Column(
@@ -190,9 +183,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Net Balance: ₹${netBalance.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
-                        if (totalLoanAmount > 0)
-                          Text('(అప్పు: ₹${totalLoanAmount.toStringAsFixed(0)})', style: const TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                        Text('Overall Net Balance: ₹${netBalance.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -200,13 +191,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
               ],
             ),
           ),
-
-          // మెయిನ್ రిపోర్ట్ & స్టేట్‌మెంట్ నావిగేషన్ కార్డ్స్
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               children: [
-                // 1. Income Breakdown
                 Card(
                   elevation: 3,
                   margin: const EdgeInsets.only(bottom: 12),
@@ -219,7 +207,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       child: const Icon(Icons.arrow_downward, color: Colors.green, size: 28),
                     ),
                     title: const Text('Income Report', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Category-wise, Person-wise & Net Total', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    subtitle: const Text('Total Income & Filtered Statement Tabs', style: TextStyle(fontSize: 13, color: Colors.grey)),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 18),
                     onTap: () {
                       Navigator.push(
@@ -235,8 +223,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     },
                   ),
                 ),
-
-                // 2. Expenses Breakdown
                 Card(
                   elevation: 3,
                   margin: const EdgeInsets.only(bottom: 12),
@@ -249,7 +235,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                       child: const Icon(Icons.arrow_upward, color: Colors.red, size: 28),
                     ),
                     title: const Text('Expenses Report', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Category-wise, Person-wise & Net Total', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    subtitle: const Text('Total Expenses & Filtered Statement Tabs', style: TextStyle(fontSize: 13, color: Colors.grey)),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 18),
                     onTap: () {
                       Navigator.push(
@@ -265,66 +251,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
                     },
                   ),
                 ),
-
-                // 3. Income Statement
-                Card(
-                  elevation: 3,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(16),
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.teal.shade100,
-                      radius: 24,
-                      child: const Icon(Icons.receipt_long, color: Colors.teal, size: 28),
-                    ),
-                    title: const Text('Income Statement', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Date-wise detailed income list with person & category', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 18),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => StatementListScreen(
-                            isIncome: true,
-                            fromDateStr: fromDateController.text,
-                            toDateStr: toDateController.text,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                // 4. Expenses Statement
-                Card(
-                  elevation: 3,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.all(16),
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.orange.shade100,
-                      radius: 24,
-                      child: Icon(Icons.list_alt, color: Colors.orange.shade800, size: 28),
-                    ),
-                    title: const Text('Expenses Statement', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    subtitle: const Text('Date-wise detailed expense list with person & category', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                    trailing: const Icon(Icons.arrow_forward_ios, size: 18),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => StatementListScreen(
-                            isIncome: false,
-                            fromDateStr: fromDateController.text,
-                            toDateStr: toDateController.text,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
               ],
             ),
           ),
@@ -334,179 +260,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 }
 
-// -------------------------------------------------------------
-// 1. Income & Expenses Statement Screen
-// -------------------------------------------------------------
-class StatementListScreen extends StatelessWidget {
-  final bool isIncome;
-  final String? fromDateStr;
-  final String? toDateStr;
-
-  const StatementListScreen({
-    super.key,
-    required this.isIncome,
-    this.fromDateStr,
-    this.toDateStr,
-  });
-
-  DateTime? _parseDate(String text) {
-    try {
-      List<String> parts = text.trim().split('-');
-      if (parts.length == 3) {
-        int day = int.parse(parts[0]);
-        int month = int.parse(parts[1]);
-        int year = int.parse(parts[2]);
-        return DateTime(year, month, day);
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  bool _isDateInRange(String dateStr) {
-    if ((fromDateStr == null || fromDateStr!.trim().isEmpty) && (toDateStr == null || toDateStr!.trim().isEmpty)) {
-      return true;
-    }
-    DateTime? entryDate = _parseDate(dateStr);
-    if (entryDate == null) return true;
-    DateTime? fDate = _parseDate(fromDateStr ?? '');
-    DateTime? tDate = _parseDate(toDateStr ?? '');
-    if (fDate != null) {
-      DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
-      if (entryDate.isBefore(start)) return false;
-    }
-    if (tDate != null) {
-      DateTime end = DateTime(tDate.year, tDate.month, tDate.day, 23, 59, 59);
-      if (entryDate.isAfter(end)) return false;
-    }
-    return true;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    List<FinanceItem> statementEntries = [];
-
-    for (var person in globalPersons) {
-      for (var entry in person.entries) {
-        if (_isDateInRange(entry.date)) {
-          bool condition = isIncome ? (entry.amount > 0) : (entry.amount < 0);
-          if (condition) {
-            statementEntries.add(entry);
-          }
-        }
-      }
-    }
-
-    double totalAmount = statementEntries.fold(0.0, (sum, e) => sum + e.amount.abs());
-    Color themeColor = isIncome ? Colors.teal.shade700 : Colors.orange.shade800;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(isIncome ? 'Income Statement' : 'Expenses Statement'),
-        backgroundColor: themeColor,
-        foregroundColor: Colors.white,
-      ),
-      body: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            color: isIncome ? Colors.teal.shade50 : Colors.orange.shade50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  isIncome ? 'Total Income Statement:' : 'Total Expenses Statement:',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: themeColor),
-                ),
-                Text(
-                  '₹${totalAmount.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: themeColor),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: statementEntries.isEmpty
-                ? Center(child: Text(isIncome ? 'No income statement records found.' : 'No expense statement records found.'))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: statementEntries.length,
-                    itemBuilder: (context, index) {
-                      final item = statementEntries[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        elevation: 2,
-                        child: Padding(
-                          padding: const EdgeInsets.all(12.0),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        item.date,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    item.category.isNotEmpty ? item.category : 'General',
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                                  ),
-                                  if (item.description.isNotEmpty) ...[
-                                    const SizedBox(height: 2),
-                                    Text('📝 ${item.description}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                                  ],
-                                ],
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    '₹${item.amount.abs().toStringAsFixed(2)}',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: isIncome ? Colors.green.shade700 : Colors.red.shade700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade200,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      '👤 ${item.person}',
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// -------------------------------------------------------------
-// 2. Detailed Report Tabs Screen
-// -------------------------------------------------------------
-class DetailedReportTabsScreen extends StatelessWidget {
+class DetailedReportTabsScreen extends StatefulWidget {
   final bool isIncome;
   final String? fromDateStr;
   final String? toDateStr;
@@ -518,6 +272,30 @@ class DetailedReportTabsScreen extends StatelessWidget {
     this.toDateStr,
   });
 
+  @override
+  State<DetailedReportTabsScreen> createState() => _DetailedReportTabsScreenState();
+}
+
+class _DetailedReportTabsScreenState extends State<DetailedReportTabsScreen> {
+  String selectedPerson = 'All';
+  String selectedCategory = 'All';
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await loadFinanceDataFromPrefs();
+    if (mounted) {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
   DateTime? _parseDate(String text) {
     try {
       List<String> parts = text.trim().split('-');
@@ -532,13 +310,14 @@ class DetailedReportTabsScreen extends StatelessWidget {
   }
 
   bool _isDateInRange(String dateStr) {
-    if ((fromDateStr == null || fromDateStr!.trim().isEmpty) && (toDateStr == null || toDateStr!.trim().isEmpty)) {
+    if ((widget.fromDateStr == null || widget.fromDateStr!.trim().isEmpty) &&
+        (widget.toDateStr == null || widget.toDateStr!.trim().isEmpty)) {
       return true;
     }
     DateTime? entryDate = _parseDate(dateStr);
     if (entryDate == null) return true;
-    DateTime? fDate = _parseDate(fromDateStr ?? '');
-    DateTime? tDate = _parseDate(toDateStr ?? '');
+    DateTime? fDate = _parseDate(widget.fromDateStr ?? '');
+    DateTime? tDate = _parseDate(widget.toDateStr ?? '');
     if (fDate != null) {
       DateTime start = DateTime(fDate.year, fDate.month, fDate.day);
       if (entryDate.isBefore(start)) return false;
@@ -552,176 +331,339 @@ class DetailedReportTabsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Map<String, double> categoryTotals = {};
-    Map<String, List<FinanceItem>> categoryEntries = {};
+    if (isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.isIncome ? 'Income Report' : 'Expenses Report'),
+          backgroundColor: widget.isIncome ? Colors.green.shade700 : Colors.red.shade700,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
-    Map<String, double> personTotals = {};
-    Map<String, List<FinanceItem>> personEntries = {};
+    List<FinanceItem> statementEntries = [];
+    Set<String> personsSet = {'All'};
+    Set<String> categoriesSet = {'All'};
 
-    List<FinanceItem> allFilteredEntries = [];
-
-    for (var person in globalPersons) {
-      for (var entry in person.entries) {
+    for (var personData in globalPersons) {
+      for (var entry in personData.entries) {
         if (_isDateInRange(entry.date)) {
-          bool condition = isIncome ? (entry.amount > 0) : (entry.amount < 0);
+          bool condition = widget.isIncome ? (entry.amount > 0) : (entry.amount < 0);
           if (condition) {
-            double amt = entry.amount.abs();
-            String cat = entry.category.isNotEmpty ? entry.category : 'General';
-            String pName = person.name;
+            statementEntries.add(entry);
 
-            categoryTotals[cat] = (categoryTotals[cat] ?? 0) + amt;
-            categoryEntries.putIfAbsent(cat, () => []).add(entry);
+            if (entry.person.isNotEmpty) {
+              personsSet.add(entry.person);
+            } else if (personData.name.isNotEmpty) {
+              personsSet.add(personData.name);
+            }
 
-            personTotals[pName] = (personTotals[pName] ?? 0) + amt;
-            personEntries.putIfAbsent(pName, () => []).add(entry);
-
-            allFilteredEntries.add(entry);
+            if (entry.category.isNotEmpty) {
+              categoriesSet.add(entry.category);
+            }
           }
         }
       }
     }
 
-    double netTotal = allFilteredEntries.fold(0.0, (sum, e) => sum + e.amount.abs());
-    Color themeColor = isIncome ? Colors.green.shade700 : Colors.red.shade700;
+    List<String> personsList = personsSet.toList();
+    List<String> categoriesList = categoriesSet.toList();
+
+    statementEntries.sort((a, b) {
+      DateTime? dtA = _parseDate(a.date);
+      DateTime? dtB = _parseDate(b.date);
+      if (dtA != null && dtB != null) return dtA.compareTo(dtB);
+      return 0;
+    });
+
+    if (!personsList.contains(selectedPerson)) {
+      selectedPerson = 'All';
+    }
+    if (!categoriesList.contains(selectedCategory)) {
+      selectedCategory = 'All';
+    }
+
+    List<FinanceItem> filteredEntries = statementEntries.where((entry) {
+      bool matchesPerson = selectedPerson == 'All' || entry.person == selectedPerson;
+      bool matchesCategory = selectedCategory == 'All' || entry.category == selectedCategory;
+      return matchesPerson && matchesCategory;
+    }).toList();
+
+    double totalAmountTab1 = statementEntries.fold(0.0, (sum, e) => sum + e.amount.abs());
+    double totalAmountTab2 = filteredEntries.fold(0.0, (sum, e) => sum + e.amount.abs());
+
+    // Calculate Individual Person Totals if a specific person is selected in Tab 2
+    double personIncome = 0;
+    double personExpense = 0;
+    if (selectedPerson != 'All') {
+      for (var p in globalPersons) {
+        if (p.name == selectedPerson) {
+          for (var e in p.entries) {
+            if (_isDateInRange(e.date)) {
+              if (e.amount > 0) personIncome += e.amount;
+              if (e.amount < 0) personExpense += e.amount.abs();
+            }
+          }
+        }
+      }
+    }
+    double personNetBalance = personIncome - personExpense;
+
+    Color themeColor = widget.isIncome ? Colors.green.shade700 : Colors.red.shade700;
+    String personLabel = widget.isIncome ? 'Income Person' : 'Expense Person';
+    String categoryLabel = widget.isIncome ? 'Income Category' : 'Expense Category';
 
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(isIncome ? 'Income Breakdown' : 'Expenses Breakdown'),
+          title: Text(widget.isIncome ? 'Income Report' : 'Expenses Report'),
           backgroundColor: themeColor,
           foregroundColor: Colors.white,
-          bottom: const TabBar(
+          bottom: TabBar(
             indicatorColor: Colors.white,
             labelColor: Colors.white,
             unselectedLabelColor: Colors.white70,
             tabs: [
-              Tab(icon: Icon(Icons.category), text: 'Category-wise'),
-              Tab(icon: Icon(Icons.person), text: 'Person-wise'),
-              Tab(icon: Icon(Icons.account_balance_wallet), text: 'Net Total'),
+              Tab(icon: const Icon(Icons.list_alt), text: widget.isIncome ? 'Total Income' : 'Total Expenses'),
+              const Tab(icon: Icon(Icons.filter_list), text: 'Person & Category-wise'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            _buildGroupedListView(categoryTotals, categoryEntries, isIncome, 'No categories found.'),
-            _buildGroupedListView(personTotals, personEntries, isIncome, 'No persons found.'),
-            _buildNetTotalView(netTotal, allFilteredEntries, isIncome),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGroupedListView(
-    Map<String, double> totalsMap,
-    Map<String, List<FinanceItem>> entriesMap,
-    bool isInc,
-    String emptyMessage,
-  ) {
-    if (totalsMap.isEmpty) {
-      return Center(child: Text(emptyMessage));
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: totalsMap.length,
-      itemBuilder: (context, index) {
-        String keyName = totalsMap.keys.elementAt(index);
-        double totalAmt = totalsMap[keyName]!;
-        List<FinanceItem> entries = entriesMap[keyName]!;
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 10),
-          elevation: 2,
-          child: ExpansionTile(
-            title: Text(keyName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            trailing: Text(
-              '₹${totalAmt.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: isInc ? Colors.green.shade700 : Colors.red.shade700,
-              ),
-            ),
-            children: [
-              const Divider(height: 1),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: entries.length,
-                itemBuilder: (context, itemIndex) {
-                  final item = entries[itemIndex];
-                  return ListTile(
-                    dense: true,
-                    title: Text('📅 ${item.date}  |  👤 ${item.person}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('₹${item.amount.abs().toStringAsFixed(2)}${item.description.isNotEmpty ? ' | 📝 ${item.description}' : ''}'),
-                  );
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildNetTotalView(double netTotal, List<FinanceItem> entries, bool isInc) {
-    return Padding(
-      padding: const EdgeInsets.all(12.0),
-      child: Column(
-        children: [
-          Card(
-            color: isInc ? Colors.green.shade50 : Colors.red.shade50,
-            elevation: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    isInc ? 'Net Total Income:' : 'Net Total Expenses:',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isInc ? Colors.green.shade800 : Colors.red.shade800),
+            Column(
+              children: [
+                Expanded(
+                  child: statementEntries.isEmpty
+                      ? Center(child: Text(widget.isIncome ? 'No income records found.' : 'No expense records found.'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(12),
+                          itemCount: statementEntries.length,
+                          itemBuilder: (context, index) {
+                            final item = statementEntries[index];
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              elevation: 2,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                                            const SizedBox(width: 4),
+                                            Text(item.date, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(item.category.isNotEmpty ? item.category : 'General', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                        if (item.description.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text('📝 ${item.description}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                        ],
+                                      ],
+                                    ),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          '₹${item.amount.abs().toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: widget.isIncome ? Colors.green.shade700 : Colors.red.shade700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
+                                          child: Text('👤 ${item.person}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  color: widget.isIncome ? Colors.green.shade50 : Colors.red.shade50,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(widget.isIncome ? 'Total Income Amount:' : 'Total Expenses Amount:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: themeColor)),
+                      Text('₹${totalAmountTab1.toStringAsFixed(2)}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: themeColor)),
+                    ],
                   ),
-                  Text(
-                    '₹${netTotal.toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isInc ? Colors.green.shade800 : Colors.red.shade800),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'All Transaction Entries (${entries.length})',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: entries.isEmpty
-                ? const Center(child: Text('No entries found.'))
-                : ListView.builder(
-                    itemCount: entries.length,
-                    itemBuilder: (context, index) {
-                      final item = entries[index];
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: ListTile(
-                          title: Text('📅 ${item.date} | 📂 ${item.category}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('👤 ${item.person}${item.description.isNotEmpty ? ' | 📝 ${item.description}' : ''}'),
-                          trailing: Text(
-                            '₹${item.amount.abs().toStringAsFixed(2)}',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isInc ? Colors.green.shade700 : Colors.red.shade700),
+            Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  color: widget.isIncome ? Colors.green.shade50 : Colors.red.shade50,
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: selectedPerson,
+                              decoration: InputDecoration(
+                                labelText: personLabel,
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                                fillColor: Colors.white,
+                                filled: true,
+                                contentPadding: const EdgeInsets.all(8),
+                              ),
+                              items: personsList.map((String p) {
+                                return DropdownMenuItem<String>(value: p, child: Text(p, style: const TextStyle(fontSize: 13)));
+                              }).toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setState(() {
+                                    selectedPerson = val;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: selectedCategory,
+                              decoration: InputDecoration(
+                                labelText: categoryLabel,
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                                fillColor: Colors.white,
+                                filled: true,
+                                contentPadding: const EdgeInsets.all(8),
+                              ),
+                              items: categoriesList.map((String c) {
+                                return DropdownMenuItem<String>(value: c, child: Text(c, style: const TextStyle(fontSize: 13)));
+                              }).toList(),
+                              onChanged: (val) {
+                                if (val != null) {
+                                  setState(() {
+                                    selectedCategory = val;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (selectedPerson != 'All') ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.green.shade300),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              Text('Income: ₹${personIncome.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
+                              Text('Expense: ₹${personExpense.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.red)),
+                              Text('Net: ₹${personNetBalance.toStringAsFixed(2)}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: personNetBalance >= 0 ? Colors.blue : Colors.red)),
+                            ],
                           ),
                         ),
-                      );
-                    },
+                      ]
+                    ],
                   ),
-          ),
-        ],
+                ),
+                Expanded(
+                  child: filteredEntries.isEmpty
+                      ? Center(child: Text(widget.isIncome ? 'No matching income records.' : 'No matching expense records.'))
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(12),
+                          itemCount: filteredEntries.length,
+                          itemBuilder: (context, idx) {
+                            final item = filteredEntries[idx];
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              elevation: 2,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12.0),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
+                                            const SizedBox(width: 4),
+                                            Text(item.date, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(item.category.isNotEmpty ? item.category : 'General', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                        if (item.description.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text('📝 ${item.description}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                                        ],
+                                      ],
+                                    ),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          '₹${item.amount.abs().toStringAsFixed(2)}',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: widget.isIncome ? Colors.green.shade700 : Colors.red.shade700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(6)),
+                                          child: Text('👤 ${item.person}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black87)),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  color: widget.isIncome ? Colors.green.shade50 : Colors.red.shade50,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Filtered Total:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: themeColor)),
+                      Text('₹${totalAmountTab2.toStringAsFixed(2)}', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: themeColor)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
