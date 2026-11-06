@@ -1,21 +1,38 @@
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+name: Build Android Release APK
 
-  - name: Set up Java 17
-    uses: actions/setup-java@v4
-    with:
-      distribution: 'temurin'
-      java-version: '17'
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
 
-  - name: Set up Flutter
-    uses: subosito/flutter-action@v2
-    with:
-      flutter-version: '3.x'
-      channel: 'stable'
+jobs:
+  build:
+    name: Build Release APK
+    runs-on: ubuntu-latest
 
-  - name: Install dependencies
-    run: flutter pub get
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-  - name: Build Release APK
-    run: flutter build apk --release
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
