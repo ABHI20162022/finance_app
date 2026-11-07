@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 // --- Data Models ---
 class ShoppingItem {
@@ -123,13 +126,11 @@ List<CategoryModel> globalCategories = [
     ],
   ),
 ];
-
 List<ShopModel> globalShops = [
   ShopModel(id: '1', name: 'Reliance Fresh'),
   ShopModel(id: '2', name: 'D-Mart'),
   ShopModel(id: '3', name: 'Local Rythu Bazar'),
 ];
-
 List<RequiredListEntry> globalRequiredLists = [];
 
 // Local Storage Helpers for Shopping
@@ -186,13 +187,11 @@ Future<void> loadShoppingDataFromPrefs() async {
       return CategoryModel(id: cMap['id'], name: cMap['name'], items: itemsList);
     }).toList();
   }
-
   String? shopStr = prefs.getString('saved_shopping_shops');
   if (shopStr != null) {
     List<dynamic> decodedShops = jsonDecode(shopStr);
     globalShops = decodedShops.map((sMap) => ShopModel(id: sMap['id'], name: sMap['name'])).toList();
   }
-
   String? reqStr = prefs.getString('saved_shopping_required_lists');
   if (reqStr != null) {
     List<dynamic> decodedReqs = jsonDecode(reqStr);
@@ -231,12 +230,10 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     super.initState();
     _initData();
   }
-
   Future<void> _initData() async {
     await loadShoppingDataFromPrefs();
     setState(() {});
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -278,7 +275,6 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
       ),
     );
   }
-
   Widget _buildDashboardCard(
     BuildContext context, {
     required String title,
@@ -371,7 +367,6 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -517,7 +512,6 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
       },
     );
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -611,7 +605,6 @@ class _ShopSelectionScreenState extends State<ShopSelectionScreen> {
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -672,12 +665,12 @@ class RequiredItemsScreen extends StatefulWidget {
 class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
   String _getListText(RequiredListEntry entry) {
     String text = "========================================\n";
-    text += "        SHOPPING BILL REPORT        \n";
+    text += "         SHOPPING BILL REPORT         \n";
     text += "========================================\n";
     text += "Date : ${entry.date}\n";
     text += "Shop : ${entry.shopName ?? 'N/A'}\n";
     text += "----------------------------------------\n";
-    text += "Item Name         Qty & Unit    Amount\n";
+    text += "Item Name          Qty & Unit    Amount\n";
     text += "----------------------------------------\n";
     for (var item in entry.selectedItems) {
       String name = item.name.padRight(18, ' ');
@@ -691,15 +684,146 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
     return text;
   }
 
-  void _shareList(RequiredListEntry entry) {
-    String listText = _getListText(entry);
-    Clipboard.setData(ClipboardData(text: listText));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('List copied! You can paste and share on WhatsApp/Messages.'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 3),
+  // STEP 1: Select Format Dialog (Excel, Word, PDF, Plain Text)
+  void _openFormatSelectionSheet(RequiredListEntry entry) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Select File Format',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 15),
+              ListTile(
+                leading: const Icon(Icons.table_chart, color: Colors.green, size: 28),
+                title: const Text('Excel Sheet (.csv / .xlsx)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openAppSelectionSheet(entry, 'excel');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.description, color: Colors.blue, size: 28),
+                title: const Text('Word Document (.doc / .txt)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openAppSelectionSheet(entry, 'word');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 28),
+                title: const Text('PDF / Text File (.pdf / .txt)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openAppSelectionSheet(entry, 'pdf');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.text_fields, color: Colors.purple, size: 28),
+                title: const Text('Plain Text Message'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openAppSelectionSheet(entry, 'text');
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // STEP 2: Select Sharing Platform (WhatsApp, Telegram, All Apps)
+  void _openAppSelectionSheet(RequiredListEntry entry, String formatType) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Share ${formatType.toUpperCase()} Via',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 15),
+              ListTile(
+                leading: const Icon(Icons.send, color: Colors.teal, size: 28),
+                title: const Text('WhatsApp'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _executeSharing(entry, formatType);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.telegram, color: Colors.lightBlue, size: 28),
+                title: const Text('Telegram'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _executeSharing(entry, formatType);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share, color: Colors.orange, size: 28),
+                title: const Text('Other Apps (Drive, Gmail, Bluetooth, etc.)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _executeSharing(entry, formatType);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Execute File Generation & Sharing
+  Future<void> _executeSharing(RequiredListEntry entry, String formatType) async {
+    final directory = await getTemporaryDirectory();
+    String safeDate = entry.date.replaceAll('-', '_');
+
+    if (formatType == 'text') {
+      String listText = _getListText(entry);
+      await Share.share(listText, subject: 'Shopping List - ${entry.date}');
+      return;
+    }
+
+    String extension = '.txt';
+    String fileData = _getListText(entry);
+
+    if (formatType == 'excel') {
+      extension = '.csv';
+      fileData = "Item Name,Unit Type,Quantity,Rate,Amount\n";
+      for (var item in entry.selectedItems) {
+        fileData += '"${item.name}","${item.unitType}","${item.qtyText}",${item.rate},${item.amount}\n';
+      }
+      fileData += "\n,,,Grand Total,${entry.grandTotal}\n";
+    } else if (formatType == 'word') {
+      extension = '.doc';
+    } else if (formatType == 'pdf') {
+      extension = '.pdf.txt';
+    }
+
+    final path = "${directory.path}/Shopping_List_$safeDate$extension";
+    final file = File(path);
+    await file.writeAsString(fileData);
+
+    await Share.shareXFiles(
+      [XFile(path)],
+      text: 'Shopping List (${formatType.toUpperCase()}) - ${entry.date}',
     );
   }
 
@@ -831,7 +955,7 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.share, color: Colors.green),
-                          onPressed: () => _shareList(entry),
+                          onPressed: () => _openFormatSelectionSheet(entry),
                           tooltip: 'Share List',
                         ),
                         IconButton(
@@ -869,7 +993,6 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
 class ViewRequiredListDetailsScreen extends StatefulWidget {
   final RequiredListEntry entry;
   const ViewRequiredListDetailsScreen({super.key, required this.entry});
-
   @override
   State<ViewRequiredListDetailsScreen> createState() => _ViewRequiredListDetailsScreenState();
 }

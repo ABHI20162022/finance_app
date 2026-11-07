@@ -12,7 +12,9 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.6
   intl: ^0.20.3
-  shared_preferences: ^2.2.2  # Local data storage కోసం యాడ్ చేశాం
+  shared_preferences: ^2.2.2  # Local data storage కోసం
+  share_plus: ^10.1.4          # WhatsApp, Telegram, Mail ద్వారా షేర్ చేయడానికి
+  path_provider: ^2.1.5      # CSV/Document ఫైల్స్ సేవ్ చేయడానికి టెంపరరీ పాత్ పొందడానికి
 
 dev_dependencies:
   flutter_test:
