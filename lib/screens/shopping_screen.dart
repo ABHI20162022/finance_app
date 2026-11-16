@@ -10,11 +10,12 @@ import 'package:share_plus/share_plus.dart';
 class ShoppingItem {
   String id;
   String name;
-  String unitType; // Cycles: 'Weight (Kg/g)' -> 'Pocket' -> 'Number (No)'
+  String unitType; // Cycles: 'Weight (Kg/g)' -> 'Liquid (Ltr/ml)' -> 'Pocket' -> 'Number (No)'
   bool isSelected;
   String qtyText;
   double rate;
   double amount;
+
   ShoppingItem({
     required this.id,
     required this.name,
@@ -24,8 +25,11 @@ class ShoppingItem {
     this.rate = 0.0,
     this.amount = 0.0,
   });
+
   void toggleUnitType() {
     if (unitType == 'Weight (Kg/g)') {
+      unitType = 'Liquid (Ltr/ml)';
+    } else if (unitType == 'Liquid (Ltr/ml)') {
       unitType = 'Pocket';
     } else if (unitType == 'Pocket') {
       unitType = 'Number (No)';
@@ -33,46 +37,89 @@ class ShoppingItem {
       unitType = 'Weight (Kg/g)';
     }
   }
+
   void calculateAmount() {
     double qtyVal = _parseQty(qtyText, unitType);
     amount = qtyVal * rate;
   }
+
   double _parseQty(String text, String type) {
     text = text.trim().toLowerCase();
     if (text.isEmpty) return 0.0;
-    if (type == 'Pocket' || type == 'Number (No)') {
+
+    // 1. Number (No) Logic
+    if (type == 'Number (No)') {
+      if (text.contains('*') || text.contains('x')) {
+        List<String> parts = text.split(RegExp(r'[*x]'));
+        double count = double.tryParse(parts[0].replaceAll(RegExp(r'[^0-9.]'), '')) ?? 1.0;
+        double mul = double.tryParse(parts[1].replaceAll(RegExp(r'[^0-9.]'), '')) ?? 1.0;
+        return count * mul;
+      }
+      return double.tryParse(text.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 1.0;
+    }
+
+    // 2. Pocket Logic
+    if (type == 'Pocket') {
       if (text.contains('*') || text.contains('x')) {
         List<String> parts = text.split(RegExp(r'[*x]'));
         return double.tryParse(parts[0].replaceAll(RegExp(r'[^0-9.]'), '')) ?? 1.0;
       }
-      String cleanNumStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
-      return double.tryParse(cleanNumStr) ?? 0.0;
+      return 1.0;
     }
+
+    // 3. Weight & Liquid Multiplier Logic (e.g., 2*200gm or 2*500ml)
     if (text.contains('*') || text.contains('x')) {
       List<String> parts = text.split(RegExp(r'[*x]'));
       if (parts.length == 2) {
         double count = double.tryParse(parts[0].replaceAll(RegExp(r'[^0-9.]'), '')) ?? 1.0;
-        double subQty = _parseSingleWeightQty(parts[1]);
+        double subQty = _parseSingleWeightOrVolumeQty(parts[1], type);
         return count * subQty;
       }
     }
-    return _parseSingleWeightQty(text);
+    return _parseSingleWeightOrVolumeQty(text, type);
   }
-  double _parseSingleWeightQty(String text) {
+
+  double _parseSingleWeightOrVolumeQty(String text, String type) {
     text = text.trim().toLowerCase();
     if (text.isEmpty) return 0.0;
+
     if (text == '1/2' || text == 'half') return 0.5;
     if (text == '1/4') return 0.25;
     if (text == '3/4') return 0.75;
-    if (text.contains('kg')) {
-      String numStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
-      return double.tryParse(numStr) ?? 0.0;
+
+    // --- WEIGHT (Kg/g) LOGIC ---
+    if (type == 'Weight (Kg/g)') {
+      // IMPORTANT: Check 'kg' FIRST before checking 'g' (since 'kg' contains 'g')
+      if (text.contains('kg')) {
+        String cleanNumStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
+        return double.tryParse(cleanNumStr) ?? 0.0;
+      }
+      // Explicit Grams check (.250, .250gm, 250gm, 100gm, 250g)
+      if (text.contains('gm') || text.contains('g') || text.startsWith('.')) {
+        String cleanStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
+        double val = double.tryParse(text.startsWith('.') ? '.$cleanStr' : cleanStr) ?? 0.0;
+        if (text.startsWith('.')) return val;
+        return val / 1000.0; // 250gm -> 0.250 kg
+      }
+      // Just a number or explicit kg (e.g., 250, 2, 1) -> treated directly as kgs
+      String cleanNumStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
+      return double.tryParse(cleanNumStr) ?? 0.0;
     }
-    if (text.contains('gm') || text.contains('g')) {
-      String numStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
-      double grams = double.tryParse(numStr) ?? 0.0;
-      return grams / 1000.0;
+
+    // --- LIQUID (Ltr/ml) LOGIC ---
+    if (type == 'Liquid (Ltr/ml)') {
+      // IMPORTANT: Check 'ml' FIRST before checking 'l' (since 'ml' contains 'l')
+      if (text.contains('ml') || text.startsWith('.')) {
+        String cleanStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
+        double val = double.tryParse(text.startsWith('.') ? '.$cleanStr' : cleanStr) ?? 0.0;
+        if (text.startsWith('.')) return val;
+        return val / 1000.0; // 250ml -> 0.250 ltr
+      }
+      // Explicit Liter check or plain number (250, 250 lit, 2 lit, 1ltr, 1l) -> treated directly as ltr
+      String cleanNumStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
+      return double.tryParse(cleanNumStr) ?? 0.0;
     }
+
     String cleanNumStr = text.replaceAll(RegExp(r'[^0-9.]'), '');
     return double.tryParse(cleanNumStr) ?? 0.0;
   }
@@ -116,6 +163,7 @@ List<CategoryModel> globalCategories = [
     items: [
       ShoppingItem(id: '101', name: 'Rice', unitType: 'Weight (Kg/g)'),
       ShoppingItem(id: '102', name: 'Dal', unitType: 'Weight (Kg/g)'),
+      ShoppingItem(id: '103', name: 'Milk', unitType: 'Liquid (Ltr/ml)'),
     ],
   ),
   CategoryModel(
@@ -126,17 +174,19 @@ List<CategoryModel> globalCategories = [
     ],
   ),
 ];
+
 List<ShopModel> globalShops = [
   ShopModel(id: '1', name: 'Reliance Fresh'),
   ShopModel(id: '2', name: 'D-Mart'),
   ShopModel(id: '3', name: 'Local Rythu Bazar'),
 ];
+
 List<RequiredListEntry> globalRequiredLists = [];
 
 // Local Storage Helpers for Shopping
 Future<void> saveShoppingDataToPrefs() async {
   final prefs = await SharedPreferences.getInstance();
-  
+
   var catData = globalCategories.map((c) => {
     'id': c.id,
     'name': c.name,
@@ -184,6 +234,8 @@ Future<void> loadShoppingDataFromPrefs() async {
         name: iMap['name'],
         unitType: iMap['unitType'],
       )).toList();
+      // Sort items alphabetically
+      itemsList.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       return CategoryModel(id: cMap['id'], name: cMap['name'], items: itemsList);
     }).toList();
   }
@@ -205,6 +257,7 @@ Future<void> loadShoppingDataFromPrefs() async {
         rate: (iMap['rate'] as num).toDouble(),
         amount: (iMap['amount'] as num).toDouble(),
       )).toList();
+      selItems.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       return RequiredListEntry(
         id: rMap['id'],
         date: rMap['date'],
@@ -230,10 +283,12 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     super.initState();
     _initData();
   }
+
   Future<void> _initData() async {
     await loadShoppingDataFromPrefs();
     setState(() {});
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -275,6 +330,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
       ),
     );
   }
+
   Widget _buildDashboardCard(
     BuildContext context, {
     required String title,
@@ -367,6 +423,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -462,6 +519,7 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
                       decoration: const InputDecoration(labelText: 'Select Unit Type'),
                       items: const [
                         DropdownMenuItem(value: 'Weight (Kg/g)', child: Text('Weight (Kg / g)')),
+                        DropdownMenuItem(value: 'Liquid (Ltr/ml)', child: Text('Liquid (Ltr / ml)')),
                         DropdownMenuItem(value: 'Pocket', child: Text('Pocket')),
                         DropdownMenuItem(value: 'Number (No)', child: Text('Number (No)')),
                       ],
@@ -494,6 +552,8 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
                             name: nameController.text,
                             unitType: selectedUnit,
                           ));
+                          // Sort alphabetically
+                          widget.category.items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
                           nameController.clear();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text('Item added! Add another or click Cancel.')),
@@ -512,8 +572,11 @@ class _CategoryItemsDetailScreenState extends State<CategoryItemsDetailScreen> {
       },
     );
   }
+
   @override
   Widget build(BuildContext context) {
+    // Ensure sorted
+    widget.category.items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.category.name),
@@ -605,6 +668,7 @@ class _ShopSelectionScreenState extends State<ShopSelectionScreen> {
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -663,28 +727,41 @@ class RequiredItemsScreen extends StatefulWidget {
 }
 
 class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
-  String _getListText(RequiredListEntry entry) {
+  String _getListText(RequiredListEntry entry, {bool includeRate = true}) {
+    // Ensure items are sorted alphabetically in the report
+    entry.selectedItems.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
     String text = "========================================\n";
     text += "         SHOPPING BILL REPORT         \n";
     text += "========================================\n";
     text += "Date : ${entry.date}\n";
     text += "Shop : ${entry.shopName ?? 'N/A'}\n";
     text += "----------------------------------------\n";
-    text += "Item Name          Qty & Unit    Amount\n";
-    text += "----------------------------------------\n";
-    for (var item in entry.selectedItems) {
-      String name = item.name.padRight(18, ' ');
-      String qty = "${item.qtyText} (${item.unitType})".padRight(14, ' ');
-      String amt = "₹${item.amount.toStringAsFixed(2)}";
-      text += "$name $qty $amt\n";
+    if (includeRate) {
+      text += "Item Name          Qty & Unit    Amount\n";
+      text += "----------------------------------------\n";
+      for (var item in entry.selectedItems) {
+        String name = item.name.padRight(18, ' ');
+        String qty = "${item.qtyText} (${item.unitType})".padRight(14, ' ');
+        String amt = "₹${item.amount.toStringAsFixed(2)}";
+        text += "$name $qty $amt\n";
+      }
+      text += "----------------------------------------\n";
+      text += "GRAND TOTAL: ₹${entry.grandTotal.toStringAsFixed(2)}\n";
+    } else {
+      text += "Item Name                  Qty & Unit\n";
+      text += "----------------------------------------\n";
+      for (var item in entry.selectedItems) {
+        String name = item.name.padRight(24, ' ');
+        String qty = "${item.qtyText} (${item.unitType})";
+        text += "$name $qty\n";
+      }
+      text += "----------------------------------------\n";
     }
-    text += "----------------------------------------\n";
-    text += "GRAND TOTAL: ₹${entry.grandTotal.toStringAsFixed(2)}\n";
     text += "========================================\n";
     return text;
   }
 
-  // STEP 1: Select Format Dialog (Excel, Word, PDF, Plain Text)
   void _openFormatSelectionSheet(RequiredListEntry entry) {
     showModalBottomSheet(
       context: context,
@@ -698,40 +775,24 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'Select File Format',
+                'Select Share Type',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 15),
               ListTile(
-                leading: const Icon(Icons.table_chart, color: Colors.green, size: 28),
-                title: const Text('Excel Sheet (.csv / .xlsx)'),
+                leading: const Icon(Icons.request_quote, color: Colors.green, size: 28),
+                title: const Text('With Rate (Full Bill & Total)'),
                 onTap: () {
                   Navigator.pop(context);
-                  _openAppSelectionSheet(entry, 'excel');
+                  _openAppSelectionSheet(entry, true);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.description, color: Colors.blue, size: 28),
-                title: const Text('Word Document (.doc / .txt)'),
+                leading: const Icon(Icons.list_alt, color: Colors.orange, size: 28),
+                title: const Text('Without Rate (Items & Qty Only)'),
                 onTap: () {
                   Navigator.pop(context);
-                  _openAppSelectionSheet(entry, 'word');
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.picture_as_pdf, color: Colors.red, size: 28),
-                title: const Text('PDF / Text File (.pdf / .txt)'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _openAppSelectionSheet(entry, 'pdf');
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.text_fields, color: Colors.purple, size: 28),
-                title: const Text('Plain Text Message'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _openAppSelectionSheet(entry, 'text');
+                  _openAppSelectionSheet(entry, false);
                 },
               ),
             ],
@@ -741,8 +802,7 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
     );
   }
 
-  // STEP 2: Select Sharing Platform (WhatsApp, Telegram, All Apps)
-  void _openAppSelectionSheet(RequiredListEntry entry, String formatType) {
+  void _openAppSelectionSheet(RequiredListEntry entry, bool includeRate) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -755,32 +815,25 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Share ${formatType.toUpperCase()} Via',
+                'Share via (${includeRate ? "With Rate" : "Without Rate"})',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 15),
               ListTile(
                 leading: const Icon(Icons.send, color: Colors.teal, size: 28),
-                title: const Text('WhatsApp'),
-                onTap: () {
+                title: const Text('WhatsApp / Direct Text'),
+                onTap: () async {
                   Navigator.pop(context);
-                  _executeSharing(entry, formatType);
+                  String listText = _getListText(entry, includeRate: includeRate);
+                  await Share.share(listText, subject: 'Shopping List - ${entry.date}');
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.telegram, color: Colors.lightBlue, size: 28),
-                title: const Text('Telegram'),
-                onTap: () {
+                leading: const Icon(Icons.description, color: Colors.blue, size: 28),
+                title: const Text('Export as File (.txt / Document)'),
+                onTap: () async {
                   Navigator.pop(context);
-                  _executeSharing(entry, formatType);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.share, color: Colors.orange, size: 28),
-                title: const Text('Other Apps (Drive, Gmail, Bluetooth, etc.)'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _executeSharing(entry, formatType);
+                  await _executeFileSharing(entry, includeRate);
                 },
               ),
             ],
@@ -790,94 +843,96 @@ class _RequiredItemsScreenState extends State<RequiredItemsScreen> {
     );
   }
 
-  // Execute File Generation & Sharing
-  Future<void> _executeSharing(RequiredListEntry entry, String formatType) async {
+  Future<void> _executeFileSharing(RequiredListEntry entry, bool includeRate) async {
     final directory = await getTemporaryDirectory();
     String safeDate = entry.date.replaceAll('-', '_');
-
-    if (formatType == 'text') {
-      String listText = _getListText(entry);
-      await Share.share(listText, subject: 'Shopping List - ${entry.date}');
-      return;
-    }
-
-    String extension = '.txt';
-    String fileData = _getListText(entry);
-
-    if (formatType == 'excel') {
-      extension = '.csv';
-      fileData = "Item Name,Unit Type,Quantity,Rate,Amount\n";
-      for (var item in entry.selectedItems) {
-        fileData += '"${item.name}","${item.unitType}","${item.qtyText}",${item.rate},${item.amount}\n';
-      }
-      fileData += "\n,,,Grand Total,${entry.grandTotal}\n";
-    } else if (formatType == 'word') {
-      extension = '.doc';
-    } else if (formatType == 'pdf') {
-      extension = '.pdf.txt';
-    }
-
-    final path = "${directory.path}/Shopping_List_$safeDate$extension";
+    String fileData = _getListText(entry, includeRate: includeRate);
+    final path = "${directory.path}/Shopping_List_${includeRate ? 'WithRate' : 'WithoutRate'}_$safeDate.txt";
     final file = File(path);
     await file.writeAsString(fileData);
-
     await Share.shareXFiles(
       [XFile(path)],
-      text: 'Shopping List (${formatType.toUpperCase()}) - ${entry.date}',
+      text: 'Shopping List (${includeRate ? "With Rate" : "Without Rate"}) - ${entry.date}',
     );
   }
 
   void _openNotepadDialog(RequiredListEntry entry) {
-    String listText = _getListText(entry);
+    bool showWithRate = true;
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: const [
-            Icon(Icons.edit_note, color: Colors.purple),
-            SizedBox(width: 8),
-            Text('Notepad / Bill Viewer'),
-          ],
-        ),
-        content: Container(
-          width: double.maxFinite,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.yellow[100],
-            border: Border.all(color: Colors.brown.shade300),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: SingleChildScrollView(
-            child: SelectableText(
-              listText,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Colors.black87,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            String listText = _getListText(entry, includeRate: showWithRate);
+            return AlertDialog(
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.edit_note, color: Colors.purple),
+                      SizedBox(width: 8),
+                      Text('Bill Viewer'),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Text('Rate', style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+                      Switch(
+                        value: showWithRate,
+                        activeColor: Colors.purple,
+                        onChanged: (val) {
+                          dialogSetState(() {
+                            showWithRate = val;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: listText));
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Bill text copied successfully! Ready to paste into Word/Notepad.'),
-                  backgroundColor: Colors.purple,
+              content: Container(
+                width: double.maxFinite,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.yellow[100],
+                  border: Border.all(color: Colors.brown.shade300),
+                  borderRadius: BorderRadius.circular(6),
                 ),
-              );
-            },
-            icon: const Icon(Icons.copy, size: 16),
-            label: const Text('Copy to Clipboard'),
-          ),
-        ],
-      ),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    listText,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: listText));
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Bill text copied successfully!'),
+                        backgroundColor: Colors.purple,
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.copy, size: 16),
+                  label: const Text('Copy to Clipboard'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1004,6 +1059,7 @@ class _ViewRequiredListDetailsScreenState extends State<ViewRequiredListDetailsS
   @override
   void initState() {
     super.initState();
+    widget.entry.selectedItems.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     for (var item in widget.entry.selectedItems) {
       _qtyControllers[item.id] = TextEditingController(text: item.qtyText);
       _rateControllers[item.id] = TextEditingController(text: item.rate == 0 ? '' : item.rate.toString());
@@ -1024,6 +1080,7 @@ class _ViewRequiredListDetailsScreenState extends State<ViewRequiredListDetailsS
 
   @override
   Widget build(BuildContext context) {
+    widget.entry.selectedItems.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return Scaffold(
       appBar: AppBar(
         title: const Text('View & Update List Details'),
@@ -1070,11 +1127,13 @@ class _ViewRequiredListDetailsScreenState extends State<ViewRequiredListDetailsS
                       itemCount: widget.entry.selectedItems.length,
                       itemBuilder: (context, index) {
                         final item = widget.entry.selectedItems[index];
-                        String dynamicHint = '1/2, 2*200gm, 1kg';
-                        if (item.unitType == 'Pocket') {
+                        String dynamicHint = '1/2, 250, 250gm, 1kg';
+                        if (item.unitType == 'Liquid (Ltr/ml)') {
+                          dynamicHint = '1/2, 250, 250ml, 1ltr';
+                        } else if (item.unitType == 'Pocket') {
                           dynamicHint = '1, 2*200gm, 2';
                         } else if (item.unitType == 'Number (No)') {
-                          dynamicHint = '10, 2*10';
+                          dynamicHint = '5, 10, 2*10';
                         }
                         return Card(
                           margin: const EdgeInsets.symmetric(vertical: 4),
@@ -1232,6 +1291,19 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
     _loadItemsForSelection();
   }
 
+  double _getLatestRateFromPreviousBills(String itemId, String itemName) {
+    for (var list in globalRequiredLists) {
+      for (var oldItem in list.selectedItems) {
+        if (oldItem.id == itemId || oldItem.name.toLowerCase() == itemName.toLowerCase()) {
+          if (oldItem.rate > 0) {
+            return oldItem.rate;
+          }
+        }
+      }
+    }
+    return 0.0;
+  }
+
   void _loadItemsForSelection() {
     _formItems = [];
     _qtyControllers.clear();
@@ -1243,6 +1315,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
           String qText = '';
           double r = 0.0;
           String uType = item.unitType;
+
           if (widget.editingEntry != null) {
             var existing = widget.editingEntry!.selectedItems.firstWhere(
               (element) => element.id == item.id,
@@ -1254,7 +1327,10 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
               r = existing.rate;
               uType = existing.unitType;
             }
+          } else {
+            r = _getLatestRateFromPreviousBills(item.id, item.name);
           }
+
           var newItem = ShoppingItem(
             id: item.id,
             name: item.name,
@@ -1270,6 +1346,8 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
         }
       }
     }
+    // Sort form items alphabetically
+    _formItems.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }
 
   void _addNewShopDialog() {
@@ -1340,6 +1418,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                     decoration: const InputDecoration(labelText: 'Unit Type'),
                     items: const [
                       DropdownMenuItem(value: 'Weight (Kg/g)', child: Text('Weight (Kg / g)')),
+                      DropdownMenuItem(value: 'Liquid (Ltr/ml)', child: Text('Liquid (Ltr / ml)')),
                       DropdownMenuItem(value: 'Pocket', child: Text('Pocket')),
                       DropdownMenuItem(value: 'Number (No)', child: Text('Number (No)')),
                     ],
@@ -1362,6 +1441,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                         name: itemController.text,
                         unitType: selectedUnit,
                       ));
+                      cat.items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
                       _loadItemsForSelection();
                     });
                     await saveShoppingDataToPrefs();
@@ -1390,6 +1470,7 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
   @override
   Widget build(BuildContext context) {
     List<String> categoryNames = ['All Categories', ...globalCategories.map((e) => e.name)];
+    _formItems.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.editingEntry == null ? 'Create Required List' : 'Edit Required List'),
@@ -1480,11 +1561,13 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                 itemCount: _formItems.length,
                 itemBuilder: (context, index) {
                   final item = _formItems[index];
-                  String dynamicHint = '1/2, 2*200gm, 1kg';
-                  if (item.unitType == 'Pocket') {
+                  String dynamicHint = '1/2, 250, 250gm, 1kg';
+                  if (item.unitType == 'Liquid (Ltr/ml)') {
+                    dynamicHint = '1/2, 250, 250ml, 1ltr';
+                  } else if (item.unitType == 'Pocket') {
                     dynamicHint = '1, 2*200gm, 2';
                   } else if (item.unitType == 'Number (No)') {
-                    dynamicHint = '10, 2*10';
+                    dynamicHint = '5, 10, 2*10';
                   }
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 4),
@@ -1631,6 +1714,9 @@ class _CreateRequiredListScreenState extends State<CreateRequiredListScreen> {
                     );
                     return;
                   }
+                  // Sort selected items alphabetically before saving
+                  selectedList.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
                   setState(() {
                     if (widget.editingEntry != null) {
                       widget.editingEntry!.date = _dateController.text;
