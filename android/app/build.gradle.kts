@@ -6,8 +6,7 @@ plugins {
 android {
     namespace = "com.example.finance_app"
     compileSdk = flutter.compileSdkVersion
-    buildToolsVersion = "28.0.3"
-    ndkVersion = flutter.ndkVersion
+       ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
