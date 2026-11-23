@@ -1,6 +1,11 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// --- Storage Keys ---
+const String kSavedGlobalPersonsKey = 'saved_global_persons';
+const String kSavedIncomeCategoriesKey = 'saved_income_categories';
+const String kSavedExpenseCategoriesKey = 'saved_expense_categories';
+
 // --- Models ---
 class FinanceItem {
   String id;
@@ -35,14 +40,14 @@ class FinanceItem {
       };
 
   factory FinanceItem.fromJson(Map<String, dynamic> json) => FinanceItem(
-        id: json['id'] ?? '',
-        title: json['title'] ?? '',
+        id: json['id']?.toString() ?? '',
+        title: json['title']?.toString() ?? '',
         amount: (json['amount'] as num?)?.toDouble() ?? 0.0,
-        person: json['person'] ?? '',
-        category: json['category'] ?? '',
-        depositAccount: json['depositAccount'] ?? '',
-        date: json['date'] ?? '',
-        description: json['description'] ?? '',
+        person: json['person']?.toString() ?? '',
+        category: json['category']?.toString() ?? '',
+        depositAccount: json['depositAccount']?.toString() ?? '',
+        date: json['date']?.toString() ?? '',
+        description: json['description']?.toString() ?? '',
       );
 }
 
@@ -67,11 +72,12 @@ class PersonData {
       };
 
   factory PersonData.fromJson(Map<String, dynamic> json) => PersonData(
-        id: json['id'] ?? '',
-        name: json['name'] ?? '',
-        bankAccounts: List<String>.from(json['bankAccounts'] ?? []),
-        entries: (json['entries'] as List? ?? [])
-            .map((e) => FinanceItem.fromJson(e))
+        id: json['id']?.toString() ?? '',
+        name: json['name']?.toString() ?? '',
+        bankAccounts: List<String>.from(json['bankAccounts'] ?? const []),
+        entries: (json['entries'] as List? ?? const [])
+            .map((e) =>
+                FinanceItem.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
       );
 }
@@ -90,9 +96,10 @@ class ExpenseCategoryData {
         'subCategories': subCategories,
       };
 
-  factory ExpenseCategoryData.fromJson(Map<String, dynamic> json) => ExpenseCategoryData(
-        name: json['name'] ?? '',
-        subCategories: List<String>.from(json['subCategories'] ?? []),
+  factory ExpenseCategoryData.fromJson(Map<String, dynamic> json) =>
+      ExpenseCategoryData(
+        name: json['name']?.toString() ?? '',
+        subCategories: List<String>.from(json['subCategories'] ?? const []),
       );
 }
 
@@ -105,35 +112,60 @@ List<ExpenseCategoryData> globalExpenseCategories = [];
 Future<void> saveFinanceDataToPrefs() async {
   final prefs = await SharedPreferences.getInstance();
 
-  List<Map<String, dynamic>> personsJson =
-      globalPersons.map((p) => p.toJson()).toList();
-  await prefs.setString('saved_global_persons', jsonEncode(personsJson));
-  await prefs.setStringList('saved_income_categories', globalIncomeCategories);
-  
-  List<Map<String, dynamic>> expCatsJson =
-      globalExpenseCategories.map((c) => c.toJson()).toList();
-  await prefs.setString('saved_expense_categories', jsonEncode(expCatsJson));
+  final personsJson = globalPersons.map((p) => p.toJson()).toList();
+  await prefs.setString(kSavedGlobalPersonsKey, jsonEncode(personsJson));
+
+  await prefs.setStringList(
+    kSavedIncomeCategoriesKey,
+    List<String>.from(globalIncomeCategories),
+  );
+
+  final expCatsJson = globalExpenseCategories.map((c) => c.toJson()).toList();
+  await prefs.setString(kSavedExpenseCategoriesKey, jsonEncode(expCatsJson));
 }
 
 Future<void> loadFinanceDataFromPrefs() async {
   final prefs = await SharedPreferences.getInstance();
 
-  String? personsStr = prefs.getString('saved_global_persons');
-  if (personsStr != null) {
-    List<dynamic> decodedPersons = jsonDecode(personsStr);
-    globalPersons = decodedPersons.map((p) => PersonData.fromJson(p)).toList();
+  final personsStr = prefs.getString(kSavedGlobalPersonsKey);
+  if (personsStr != null && personsStr.isNotEmpty) {
+    final decoded = jsonDecode(personsStr);
+    if (decoded is List) {
+      globalPersons = decoded
+          .map((p) => PersonData.fromJson(Map<String, dynamic>.from(p as Map)))
+          .toList();
+    } else {
+      globalPersons = [];
+    }
   } else {
     globalPersons = [];
   }
 
-  globalIncomeCategories = prefs.getStringList('saved_income_categories') ?? [];
+  globalIncomeCategories = List<String>.from(
+      prefs.getStringList(kSavedIncomeCategoriesKey) ?? const []);
 
-  String? expCatsStr = prefs.getString('saved_expense_categories');
-  if (expCatsStr != null) {
-    List<dynamic> decodedExpCats = jsonDecode(expCatsStr);
-    globalExpenseCategories =
-        decodedExpCats.map((c) => ExpenseCategoryData.fromJson(c)).toList();
+  final expCatsStr = prefs.getString(kSavedExpenseCategoriesKey);
+  if (expCatsStr != null && expCatsStr.isNotEmpty) {
+    final decodedExp = jsonDecode(expCatsStr);
+    if (decodedExp is List) {
+      globalExpenseCategories = decodedExp
+          .map((c) =>
+              ExpenseCategoryData.fromJson(Map<String, dynamic>.from(c as Map)))
+          .toList();
+    } else {
+      globalExpenseCategories = [];
+    }
   } else {
     globalExpenseCategories = [];
   }
+}
+
+Future<void> clearFinanceDataPrefs() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(kSavedGlobalPersonsKey);
+  await prefs.remove(kSavedIncomeCategoriesKey);
+  await prefs.remove(kSavedExpenseCategoriesKey);
+  globalPersons = [];
+  globalIncomeCategories = [];
+  globalExpenseCategories = [];
 }

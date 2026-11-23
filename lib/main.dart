@@ -9,14 +9,16 @@ import 'screens/reports_screen.dart';
 import 'screens/reminders_info_screen.dart';
 import 'screens/fixed_expenses_screen.dart';
 import 'screens/activation_screen.dart';
+import 'utils/backup_helper.dart';
 
 // మీ అసలు అడ్మిన్ ఫోన్ నెంబర్ ఇక్కడ ఇవ్వండి
-const String adminPhoneNumber = "8985498085"; 
+const String adminPhoneNumber = "8985498085";
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await loadFinanceDataFromPrefs();
-  
+  await loadAllAssetsLoansData();
+
   bool isAllowed = await checkAppAccessPermission();
 
   runApp(FinanceApp(isAllowed: isAllowed));
@@ -25,16 +27,16 @@ void main() async {
 Future<bool> checkAppAccessPermission() async {
   // ---------------------------------------------------------
   // 🛠️ లాప్‌టాప్ టెస్టింగ్ మోడ్:
-  // ప్రస్తుతం టెస్ట్ చేయడానికి 'true' లో ఉంచండి. 
+  // ప్రస్తుతం టెస్ట్ చేయడానికి 'true' లో ఉంచండి.
   // మీరు ఫైనల్ APK బిల్డ్ చేసేటప్పుడు దీన్ని 'false' చేయాలి!
   // ---------------------------------------------------------
-  bool isTestingOnLaptop = true; 
+  bool isTestingOnLaptop = true;
   if (isTestingOnLaptop) {
-    return true; 
+    return true;
   }
 
   final prefs = await SharedPreferences.getInstance();
-  
+
   // అడ్మిన్ ఫోన్ నెంబర్ చెకింగ్
   String? savedPhone = prefs.getString('user_phone');
   if (savedPhone == adminPhoneNumber) {
@@ -83,8 +85,90 @@ class FinanceApp extends StatelessWidget {
   }
 }
 
-class MainDashboardScreen extends StatelessWidget {
+class MainDashboardScreen extends StatefulWidget {
   const MainDashboardScreen({super.key});
+
+  @override
+  State<MainDashboardScreen> createState() => _MainDashboardScreenState();
+}
+
+class _MainDashboardScreenState extends State<MainDashboardScreen> {
+  Future<void> _handleDataRestored() async {
+    await loadFinanceDataFromPrefs();
+    await loadExpenseScreenData();
+    await loadIncomeScreenData();
+    await loadAllAssetsLoansData();
+    // మిగతా స్క్రీన్‌ల లోడ్ ఫంక్షన్లు వచ్చినప్పుడు ఇక్కడ కలపండి
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Widget _buildBackupRestoreSection() {
+    return Row(
+      children: [
+        Expanded(
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            icon: const Icon(Icons.backup, size: 18),
+            label: const Text('Backup'),
+            onPressed: () async {
+              try {
+                await BackupHelper.exportBackupFile();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Backup JSON ready! Save to Google Drive, WhatsApp, or Files.',
+                    ),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Backup failed: $e')),
+                );
+              }
+            },
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.indigo.shade700,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            icon: const Icon(Icons.restore, size: 18),
+            label: const Text('Restore'),
+            onPressed: () async {
+              try {
+                final restored = await BackupHelper.importBackupFile();
+                if (!restored) return;
+                await _handleDataRestored();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Backup restored successfully!'),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Restore failed: $e')),
+                );
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +182,10 @@ class MainDashboardScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          // Backup & Restore Bar (Home Dashboard Top)
+          _buildBackupRestoreSection(),
+          const SizedBox(height: 16),
+
           // 1. Income Management Card
           _buildDashboardCard(
             context,
@@ -146,7 +234,8 @@ class MainDashboardScreen extends StatelessWidget {
           _buildDashboardCard(
             context,
             title: 'Financial Reports',
-            subtitle: 'View overall income, expenses, net balance & category breakdown',
+            subtitle:
+                'View overall income, expenses, net balance & category breakdown',
             icon: Icons.bar_chart,
             color: Colors.blue,
             destination: const ReportsScreen(),
@@ -168,7 +257,8 @@ class MainDashboardScreen extends StatelessWidget {
           _buildDashboardCard(
             context,
             title: 'Fixed Expenses & Fees Tracker',
-            subtitle: 'Track school fees, bus fees & remaining balance for children',
+            subtitle:
+                'Track school fees, bus fees & remaining balance for children',
             icon: Icons.account_balance_wallet,
             color: Colors.purple,
             destination: const FixedExpensesScreen(),

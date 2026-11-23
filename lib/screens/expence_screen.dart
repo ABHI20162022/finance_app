@@ -3,9 +3,51 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/finance_model.dart';
 
+/// Call this from anywhere (e.g., onRestored in BackupRestoreBar)
+/// to reload Expense & shared Person/Category data from SharedPreferences.
+Future<void> loadExpenseScreenData() async {
+  final prefs = await SharedPreferences.getInstance();
+
+  String? personsStr = prefs.getString('saved_global_persons');
+  if (personsStr != null) {
+    List decodedPersons = jsonDecode(personsStr);
+    globalPersons = decodedPersons.map((pMap) {
+      var entriesList = (pMap['entries'] as List? ?? [])
+          .map((eMap) => FinanceItem(
+                id: eMap['id'],
+                title: eMap['title'],
+                amount: (eMap['amount'] as num).toDouble(),
+                person: eMap['person'],
+                category: eMap['category'],
+                depositAccount: eMap['depositAccount'],
+                date: eMap['date'],
+                description: eMap['description'] ?? '',
+              ))
+          .toList();
+      var banksList = List<String>.from(pMap['bankAccounts'] ?? []);
+      return PersonData(
+        id: pMap['id'],
+        name: pMap['name'],
+        bankAccounts: banksList,
+        entries: entriesList,
+      );
+    }).toList();
+  }
+
+  String? categoriesStr = prefs.getString('saved_expense_categories');
+  if (categoriesStr != null) {
+    List decodedCats = jsonDecode(categoriesStr);
+    globalExpenseCategories = decodedCats.map((cMap) {
+      return ExpenseCategoryData(
+        name: cMap['name'],
+        subCategories: List<String>.from(cMap['subCategories'] ?? []),
+      );
+    }).toList();
+  }
+}
+
 class ExpenceScreen extends StatefulWidget {
   const ExpenceScreen({super.key});
-
   @override
   State<ExpenceScreen> createState() => _ExpenceScreenState();
 }
@@ -15,7 +57,6 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   final TextEditingController toDateController = TextEditingController();
   final TextEditingController personSearchController = TextEditingController();
   final TextEditingController categorySearchController = TextEditingController();
-
   String? selectedFilterPerson;
   String? selectedFilterCategory;
   String? selectedFilterPaidBy;
@@ -31,7 +72,6 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   void _setDefaultMonthDates() {
     DateTime now = DateTime.now();
     DateTime firstDayOfMonth = DateTime(now.year, now.month, 1);
-
     fromDateController.text =
         "${firstDayOfMonth.day.toString().padLeft(2, '0')}-${firstDayOfMonth.month.toString().padLeft(2, '0')}-${firstDayOfMonth.year}";
     toDateController.text =
@@ -39,43 +79,10 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   }
 
   Future<void> _loadDataAndRefresh() async {
-    final prefs = await SharedPreferences.getInstance();
-    String? personsStr = prefs.getString('saved_global_persons');
-    if (personsStr != null) {
-      List decodedPersons = jsonDecode(personsStr);
-      globalPersons = decodedPersons.map((pMap) {
-        var entriesList = (pMap['entries'] as List? ?? [])
-            .map((eMap) => FinanceItem(
-                  id: eMap['id'],
-                  title: eMap['title'],
-                  amount: (eMap['amount'] as num).toDouble(),
-                  person: eMap['person'],
-                  category: eMap['category'],
-                  depositAccount: eMap['depositAccount'],
-                  date: eMap['date'],
-                  description: eMap['description'] ?? '',
-                ))
-            .toList();
-        var banksList = List<String>.from(pMap['bankAccounts'] ?? []);
-        return PersonData(
-          id: pMap['id'],
-          name: pMap['name'],
-          bankAccounts: banksList,
-          entries: entriesList,
-        );
-      }).toList();
+    await loadExpenseScreenData();
+    if (mounted) {
+      setState(() {});
     }
-    String? categoriesStr = prefs.getString('saved_expense_categories');
-    if (categoriesStr != null) {
-      List decodedCats = jsonDecode(categoriesStr);
-      globalExpenseCategories = decodedCats.map((cMap) {
-        return ExpenseCategoryData(
-          name: cMap['name'],
-          subCategories: List<String>.from(cMap['subCategories'] ?? []),
-        );
-      }).toList();
-    }
-    setState(() {});
   }
 
   Future<void> _saveDataToPrefs() async {
@@ -99,7 +106,6 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                   .toList(),
             })
         .toList();
-
     var categoriesData = globalExpenseCategories
         .map((c) => {
               'name': c.name,
@@ -124,7 +130,8 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   }
 
   bool _isDateInRange(String dateStr) {
-    if (fromDateController.text.trim().isEmpty && toDateController.text.trim().isEmpty) {
+    if (fromDateController.text.trim().isEmpty &&
+        toDateController.text.trim().isEmpty) {
       return true;
     }
     DateTime? entryDate = _parseDate(dateStr);
@@ -143,14 +150,16 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   }
 
   bool _isExpenseEntry(FinanceItem entry) {
-    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') ||
-        entry.category.toLowerCase().contains('transfer');
+    bool isJournalOrTransfer =
+        entry.category.toLowerCase().contains('journal') ||
+            entry.category.toLowerCase().contains('transfer');
     return (entry.amount < 0 || entry.amount == 0.0) && !isJournalOrTransfer;
   }
 
   bool _isIncomeEntry(FinanceItem entry) {
-    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') ||
-        entry.category.toLowerCase().contains('transfer');
+    bool isJournalOrTransfer =
+        entry.category.toLowerCase().contains('journal') ||
+            entry.category.toLowerCase().contains('transfer');
     return entry.amount > 0 && !isJournalOrTransfer;
   }
 
@@ -162,12 +171,17 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
         title: Text(person == null ? 'Add Expense Person' : 'Edit Person'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: 'Person Name', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+              labelText: 'Person Name', border: OutlineInputBorder()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white),
             onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
                 setState(() {
@@ -193,27 +207,36 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
     );
   }
 
-  void _showExpenseCategoryDialog({ExpenseCategoryData? oldCategory, int? index}) {
+  void _showExpenseCategoryDialog(
+      {ExpenseCategoryData? oldCategory, int? index}) {
     final controller = TextEditingController(text: oldCategory?.name ?? '');
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(oldCategory == null ? 'Add Expense Category' : 'Edit Category'),
+        title:
+            Text(oldCategory == null ? 'Add Expense Category' : 'Edit Category'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: 'Category Name', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+              labelText: 'Category Name', border: OutlineInputBorder()),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white),
             onPressed: () async {
               String name = controller.text.trim();
               if (name.isNotEmpty) {
                 setState(() {
                   if (oldCategory == null) {
-                    if (!globalExpenseCategories.any((cat) => cat.name == name)) {
-                      globalExpenseCategories.add(ExpenseCategoryData(name: name, subCategories: []));
+                    if (!globalExpenseCategories
+                        .any((cat) => cat.name == name)) {
+                      globalExpenseCategories.add(
+                          ExpenseCategoryData(name: name, subCategories: []));
                     }
                   } else if (index != null) {
                     globalExpenseCategories[index].name = name;
@@ -232,26 +255,21 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double totalExpenses = 0; // Date range expenses
-    double lifetimeExpenses = 0; // Lifetime expenses for Net Balance
-    double lifetimeIncome = 0; // Lifetime income for Net Balance
-
+    double totalExpenses = 0;
+    double lifetimeExpenses = 0;
+    double lifetimeIncome = 0;
     List allStatementEntries = [];
     List allPaidByEntries = [];
     for (var person in globalPersons) {
       for (var entry in person.entries) {
-        // Lifetime calculation (without date range filter)
         if (_isExpenseEntry(entry)) {
           lifetimeExpenses += entry.amount.abs();
         } else if (_isIncomeEntry(entry)) {
           lifetimeIncome += entry.amount;
         }
-
-        // Date range calculation
         if (_isDateInRange(entry.date)) {
           if (_isExpenseEntry(entry)) {
             totalExpenses += entry.amount.abs();
-
             String paidBy = person.name;
             String narration = entry.description;
             if (entry.description.contains("Paid by ")) {
@@ -285,39 +303,47 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
       }
     }
     double netBalance = lifetimeIncome - lifetimeExpenses;
-
     String pSearch = personSearchController.text.trim().toLowerCase();
     List<PersonData> filteredPersonsList = globalPersons.where((p) {
       return pSearch.isEmpty || p.name.toLowerCase().contains(pSearch);
     }).toList();
-
     String cSearch = categorySearchController.text.trim().toLowerCase();
-    List<ExpenseCategoryData> filteredCategoriesList = globalExpenseCategories.where((c) {
+    List<ExpenseCategoryData> filteredCategoriesList =
+        globalExpenseCategories.where((c) {
       return cSearch.isEmpty || c.name.toLowerCase().contains(cSearch);
     }).toList();
-
     List filteredStatement = allStatementEntries.where((item) {
       FinanceItem e = item['entry'];
-      bool matchesPerson = selectedFilterPerson == null || selectedFilterPerson == 'All' || e.person == selectedFilterPerson;
-      bool matchesCategory = selectedFilterCategory == null || selectedFilterCategory == 'All' || e.category.startsWith(selectedFilterCategory!);
+      bool matchesPerson = selectedFilterPerson == null ||
+          selectedFilterPerson == 'All' ||
+          e.person == selectedFilterPerson;
+      bool matchesCategory = selectedFilterCategory == null ||
+          selectedFilterCategory == 'All' ||
+          e.category.startsWith(selectedFilterCategory!);
       return matchesPerson && matchesCategory;
     }).toList();
-    double statementTotalAmount = filteredStatement.fold(0.0, (sum, item) => sum + (item['amount'] as double));
-
+    double statementTotalAmount = filteredStatement.fold(
+        0.0, (sum, item) => sum + (item['amount'] as double));
     List filteredPaidByStatement = allPaidByEntries.where((item) {
       FinanceItem e = item['entry'];
       String paidByPerson = item['paidBy'].toString();
-      bool matchesPaidBy = selectedFilterPaidBy == null || selectedFilterPaidBy == 'All' || paidByPerson == selectedFilterPaidBy;
-      bool matchesCategory = selectedFilterPaidByCategory == null || selectedFilterPaidByCategory == 'All' || e.category.startsWith(selectedFilterPaidByCategory!);
+      bool matchesPaidBy = selectedFilterPaidBy == null ||
+          selectedFilterPaidBy == 'All' ||
+          paidByPerson == selectedFilterPaidBy;
+      bool matchesCategory = selectedFilterPaidByCategory == null ||
+          selectedFilterPaidByCategory == 'All' ||
+          e.category.startsWith(selectedFilterPaidByCategory!);
       return matchesPaidBy && matchesCategory;
     }).toList();
-    double totalPaidAmount = filteredPaidByStatement.fold(0.0, (sum, item) => sum + (item['amount'] as double));
+    double totalPaidAmount = filteredPaidByStatement.fold(
+        0.0, (sum, item) => sum + (item['amount'] as double));
 
     return DefaultTabController(
       length: 4,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Expense Management & Statements', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: const Text('Expense Management & Statements',
+              style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: Colors.red.shade700,
           foregroundColor: Colors.white,
           bottom: const TabBar(
@@ -350,9 +376,15 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Total Expenses', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                            const Text('Total Expenses',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 11)),
                             const SizedBox(height: 2),
-                            Text('₹${totalExpenses.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                            Text('₹${totalExpenses.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
@@ -360,7 +392,9 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                   ),
                   Expanded(
                     child: Card(
-                      color: netBalance >= 0 ? Colors.blue.shade700 : Colors.red.shade900,
+                      color: netBalance >= 0
+                          ? Colors.blue.shade700
+                          : Colors.red.shade900,
                       elevation: 2,
                       margin: const EdgeInsets.symmetric(horizontal: 4),
                       child: Padding(
@@ -368,9 +402,15 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Net Balance', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                            const Text('Net Balance',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 11)),
                             const SizedBox(height: 2),
-                            Text('₹${netBalance.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                            Text('₹${netBalance.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
@@ -392,7 +432,13 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                           child: TextField(
                             controller: fromDateController,
                             style: const TextStyle(fontSize: 12),
-                            decoration: const InputDecoration(labelText: 'From', border: OutlineInputBorder(), isDense: true, fillColor: Colors.white, filled: true, contentPadding: EdgeInsets.all(6)),
+                            decoration: const InputDecoration(
+                                labelText: 'From',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                fillColor: Colors.white,
+                                filled: true,
+                                contentPadding: EdgeInsets.all(6)),
                             onChanged: (val) => setState(() {}),
                           ),
                         ),
@@ -401,7 +447,13 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                           child: TextField(
                             controller: toDateController,
                             style: const TextStyle(fontSize: 12),
-                            decoration: const InputDecoration(labelText: 'To', border: OutlineInputBorder(), isDense: true, fillColor: Colors.white, filled: true, contentPadding: EdgeInsets.all(6)),
+                            decoration: const InputDecoration(
+                                labelText: 'To',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                                fillColor: Colors.white,
+                                filled: true,
+                                contentPadding: EdgeInsets.all(6)),
                             onChanged: (val) => setState(() {}),
                           ),
                         ),
@@ -430,7 +482,8 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.red, size: 18),
+                    icon: const Icon(Icons.refresh,
+                        color: Colors.red, size: 18),
                     constraints: const BoxConstraints(),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     onPressed: () {
@@ -454,12 +507,19 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Expense Persons', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                            const Text('Expense Persons',
+                                style: TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.bold)),
                             ElevatedButton.icon(
                               onPressed: () => _showExpensePersonDialog(),
                               icon: const Icon(Icons.add, size: 16),
-                              label: const Text('Add Person', style: TextStyle(fontSize: 12)),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                              label: const Text('Add Person',
+                                  style: TextStyle(fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.shade700,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4)),
                             ),
                           ],
                         ),
@@ -474,7 +534,9 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                     double personExpense = 0;
                                     for (var p in globalPersons) {
                                       for (var e in p.entries) {
-                                        if (_isExpenseEntry(e) && _isDateInRange(e.date) && e.person == person.name) {
+                                        if (_isExpenseEntry(e) &&
+                                            _isDateInRange(e.date) &&
+                                            e.person == person.name) {
                                           personExpense += e.amount.abs();
                                         }
                                       }
@@ -483,22 +545,47 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                       elevation: 1,
                                       margin: const EdgeInsets.only(bottom: 6),
                                       child: ListTile(
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        leading: const CircleAvatar(backgroundColor: Colors.red, radius: 16, child: Icon(Icons.person, color: Colors.white, size: 18)),
-                                        title: Text(person.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                        subtitle: Text('Total Exp: ₹${personExpense.toStringAsFixed(2)} | Acc: ${person.bankAccounts.isEmpty ? "Cash" : person.bankAccounts.join(", ")}', style: const TextStyle(fontSize: 11)),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 2),
+                                        leading: const CircleAvatar(
+                                            backgroundColor: Colors.red,
+                                            radius: 16,
+                                            child: Icon(Icons.person,
+                                                color: Colors.white, size: 18)),
+                                        title: Text(person.name,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14)),
+                                        subtitle: Text(
+                                            'Total Exp: ₹${personExpense.toStringAsFixed(2)} | Acc: ${person.bankAccounts.isEmpty ? "Cash" : person.bankAccounts.join(", ")}',
+                                            style:
+                                                const TextStyle(fontSize: 11)),
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            InkWell(onTap: () => _showExpensePersonDialog(person: person), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 16, color: Colors.blue))),
+                                            InkWell(
+                                                onTap: () =>
+                                                    _showExpensePersonDialog(
+                                                        person: person),
+                                                child: const Padding(
+                                                    padding: EdgeInsets.all(4),
+                                                    child: Icon(Icons.edit,
+                                                        size: 16,
+                                                        color: Colors.blue))),
                                             InkWell(
                                               onTap: () async {
                                                 setState(() {
-                                                  globalPersons.removeWhere((p) => p.id == person.id);
+                                                  globalPersons.removeWhere(
+                                                      (p) => p.id == person.id);
                                                 });
                                                 await _saveDataToPrefs();
                                               },
-                                              child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 16, color: Colors.red)),
+                                              child: const Padding(
+                                                  padding: EdgeInsets.all(4),
+                                                  child: Icon(Icons.delete,
+                                                      size: 16,
+                                                      color: Colors.red)),
                                             ),
                                           ],
                                         ),
@@ -506,9 +593,11 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                           Navigator.push(
                                             context,
                                             MaterialPageRoute(
-                                              builder: (context) => ExpensePersonDetailScreen(
+                                              builder: (context) =>
+                                                  ExpensePersonDetailScreen(
                                                 person: person,
-                                                fromDateStr: fromDateController.text,
+                                                fromDateStr:
+                                                    fromDateController.text,
                                                 toDateStr: toDateController.text,
                                               ),
                                             ),
@@ -534,28 +623,39 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Expense Categories', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                            const Text('Expense Categories',
+                                style: TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.bold)),
                             ElevatedButton.icon(
                               onPressed: () => _showExpenseCategoryDialog(),
                               icon: const Icon(Icons.add, size: 16),
-                              label: const Text('Add Category', style: TextStyle(fontSize: 12)),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                              label: const Text('Add Category',
+                                  style: TextStyle(fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.shade700,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4)),
                             )
                           ],
                         ),
                         const SizedBox(height: 6),
                         Expanded(
                           child: filteredCategoriesList.isEmpty
-                              ? const Center(child: Text('No expense categories found.'))
+                              ? const Center(
+                                  child: Text('No expense categories found.'))
                               : ListView.builder(
                                   itemCount: filteredCategoriesList.length,
                                   itemBuilder: (context, index) {
                                     final cat = filteredCategoriesList[index];
-                                    int actualIndex = globalExpenseCategories.indexOf(cat);
+                                    int actualIndex =
+                                        globalExpenseCategories.indexOf(cat);
                                     double categoryTotal = 0;
                                     for (var p in globalPersons) {
                                       for (var e in p.entries) {
-                                        if (e.category.startsWith(cat.name) && _isDateInRange(e.date) && _isExpenseEntry(e)) {
+                                        if (e.category.startsWith(cat.name) &&
+                                            _isDateInRange(e.date) &&
+                                            _isExpenseEntry(e)) {
                                           categoryTotal += e.amount.abs();
                                         }
                                       }
@@ -564,22 +664,49 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                       elevation: 1,
                                       margin: const EdgeInsets.only(bottom: 6),
                                       child: ListTile(
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                        leading: const CircleAvatar(backgroundColor: Colors.red, radius: 16, child: Icon(Icons.shopping_cart, color: Colors.white, size: 16)),
-                                        title: Text(cat.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                        subtitle: Text('Total: ₹${categoryTotal.toStringAsFixed(2)} | Sub: ${cat.subCategories.isEmpty ? "None" : cat.subCategories.join(", ")}', style: TextStyle(color: Colors.red.shade800, fontSize: 11)),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 2),
+                                        leading: const CircleAvatar(
+                                            backgroundColor: Colors.red,
+                                            radius: 16,
+                                            child: Icon(Icons.shopping_cart,
+                                                color: Colors.white, size: 16)),
+                                        title: Text(cat.name,
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 14)),
+                                        subtitle: Text(
+                                            'Total: ₹${categoryTotal.toStringAsFixed(2)} | Sub: ${cat.subCategories.isEmpty ? "None" : cat.subCategories.join(", ")}',
+                                            style: TextStyle(
+                                                color: Colors.red.shade800,
+                                                fontSize: 11)),
                                         trailing: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            InkWell(onTap: () => _showExpenseCategoryDialog(oldCategory: cat, index: actualIndex), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, size: 16, color: Colors.blue))),
+                                            InkWell(
+                                                onTap: () =>
+                                                    _showExpenseCategoryDialog(
+                                                        oldCategory: cat,
+                                                        index: actualIndex),
+                                                child: const Padding(
+                                                    padding: EdgeInsets.all(4),
+                                                    child: Icon(Icons.edit,
+                                                        size: 16,
+                                                        color: Colors.blue))),
                                             InkWell(
                                               onTap: () async {
                                                 setState(() {
-                                                  globalExpenseCategories.removeAt(actualIndex);
+                                                  globalExpenseCategories
+                                                      .removeAt(actualIndex);
                                                 });
                                                 await _saveDataToPrefs();
                                               },
-                                              child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, size: 16, color: Colors.red)),
+                                              child: const Padding(
+                                                  padding: EdgeInsets.all(4),
+                                                  child: Icon(Icons.delete,
+                                                      size: 16,
+                                                      color: Colors.red)),
                                             ),
                                           ],
                                         ),
@@ -587,9 +714,11 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                           Navigator.push(
                                             context,
                                             MaterialPageRoute(
-                                              builder: (context) => ExpenseCategoryDetailScreen(
+                                              builder: (context) =>
+                                                  ExpenseCategoryDetailScreen(
                                                 categoryData: cat,
-                                                fromDateStr: fromDateController.text,
+                                                fromDateStr:
+                                                    fromDateController.text,
                                                 toDateStr: toDateController.text,
                                               ),
                                             ),
@@ -616,18 +745,46 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedFilterPerson ?? 'All',
-                                decoration: const InputDecoration(labelText: 'Filter Person', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.all(6)),
-                                items: ['All', ...globalPersons.map((p) => p.name)].map((name) => DropdownMenuItem(value: name, child: Text(name, style: const TextStyle(fontSize: 12)))).toList(),
-                                onChanged: (val) => setState(() => selectedFilterPerson = val),
+                                decoration: const InputDecoration(
+                                    labelText: 'Filter Person',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.all(6)),
+                                items: [
+                                  'All',
+                                  ...globalPersons.map((p) => p.name)
+                                ]
+                                    .map((name) => DropdownMenuItem(
+                                        value: name,
+                                        child: Text(name,
+                                            style: const TextStyle(
+                                                fontSize: 12))))
+                                    .toList(),
+                                onChanged: (val) => setState(
+                                    () => selectedFilterPerson = val),
                               ),
                             ),
                             const SizedBox(width: 4),
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedFilterCategory ?? 'All',
-                                decoration: const InputDecoration(labelText: 'Filter Category', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.all(6)),
-                                items: ['All', ...globalExpenseCategories.map((c) => c.name)].map((cat) => DropdownMenuItem(value: cat, child: Text(cat, style: const TextStyle(fontSize: 12)))).toList(),
-                                onChanged: (val) => setState(() => selectedFilterCategory = val),
+                                decoration: const InputDecoration(
+                                    labelText: 'Filter Category',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.all(6)),
+                                items: [
+                                  'All',
+                                  ...globalExpenseCategories.map((c) => c.name)
+                                ]
+                                    .map((cat) => DropdownMenuItem(
+                                        value: cat,
+                                        child: Text(cat,
+                                            style: const TextStyle(
+                                                fontSize: 12))))
+                                    .toList(),
+                                onChanged: (val) => setState(
+                                    () => selectedFilterCategory = val),
                               ),
                             ),
                           ],
@@ -635,14 +792,17 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                         const SizedBox(height: 6),
                         Expanded(
                           child: filteredStatement.isEmpty
-                              ? const Center(child: Text('No statement records found.'))
+                              ? const Center(
+                                  child: Text('No statement records found.'))
                               : SingleChildScrollView(
                                   scrollDirection: Axis.vertical,
                                   child: SingleChildScrollView(
                                     scrollDirection: Axis.horizontal,
                                     child: Table(
-                                      border: TableBorder.all(color: Colors.grey.shade300),
-                                      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                                      border: TableBorder.all(
+                                          color: Colors.grey.shade300),
+                                      defaultVerticalAlignment:
+                                          TableCellVerticalAlignment.middle,
                                       columnWidths: const {
                                         0: IntrinsicColumnWidth(),
                                         1: IntrinsicColumnWidth(),
@@ -653,25 +813,115 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                       },
                                       children: [
                                         TableRow(
-                                          decoration: BoxDecoration(color: Colors.red.shade700),
+                                          decoration: BoxDecoration(
+                                              color: Colors.red.shade700),
                                           children: const [
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Date', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Expense Person', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Category', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Paid By', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Narration', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Amount (₹)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Date',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Expense Person',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Category',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Paid By',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Narration',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Amount (₹)',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
                                           ],
                                         ),
                                         ...filteredStatement.map((row) {
                                           return TableRow(
                                             children: [
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['date'].toString(), style: const TextStyle(fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['expensePerson'].toString(), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['category'].toString(), style: const TextStyle(fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['paidBy'].toString(), style: const TextStyle(fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['narration'].toString().isEmpty ? '-' : row['narration'].toString(), style: const TextStyle(fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text('₹${(row['amount'] as double).toStringAsFixed(2)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['date'].toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['expensePerson']
+                                                          .toString(),
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['category'].toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['paidBy'].toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['narration']
+                                                              .toString()
+                                                              .isEmpty
+                                                          ? '-'
+                                                          : row['narration']
+                                                              .toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      '₹${(row['amount'] as double).toStringAsFixed(2)}',
+                                                      style: const TextStyle(
+                                                          color: Colors.red,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 12))),
                                             ],
                                           );
                                         }),
@@ -681,7 +931,8 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                 ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
                             color: Colors.red.shade100,
                             borderRadius: BorderRadius.circular(6),
@@ -690,8 +941,15 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Statement Total:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                              Text('₹${statementTotalAmount.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+                              const Text('Statement Total:',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                              Text('₹${statementTotalAmount.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red.shade900)),
                             ],
                           ),
                         )
@@ -708,18 +966,46 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedFilterPaidBy ?? 'All',
-                                decoration: const InputDecoration(labelText: 'Filter Payer', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.all(6)),
-                                items: ['All', ...globalPersons.map((p) => p.name)].map((name) => DropdownMenuItem(value: name, child: Text(name, style: const TextStyle(fontSize: 12)))).toList(),
-                                onChanged: (val) => setState(() => selectedFilterPaidBy = val),
+                                decoration: const InputDecoration(
+                                    labelText: 'Filter Payer',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.all(6)),
+                                items: [
+                                  'All',
+                                  ...globalPersons.map((p) => p.name)
+                                ]
+                                    .map((name) => DropdownMenuItem(
+                                        value: name,
+                                        child: Text(name,
+                                            style: const TextStyle(
+                                                fontSize: 12))))
+                                    .toList(),
+                                onChanged: (val) => setState(
+                                    () => selectedFilterPaidBy = val),
                               ),
                             ),
                             const SizedBox(width: 4),
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: selectedFilterPaidByCategory ?? 'All',
-                                decoration: const InputDecoration(labelText: 'Filter Category', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.all(6)),
-                                items: ['All', ...globalExpenseCategories.map((c) => c.name)].map((cat) => DropdownMenuItem(value: cat, child: Text(cat, style: const TextStyle(fontSize: 12)))).toList(),
-                                onChanged: (val) => setState(() => selectedFilterPaidByCategory = val),
+                                decoration: const InputDecoration(
+                                    labelText: 'Filter Category',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.all(6)),
+                                items: [
+                                  'All',
+                                  ...globalExpenseCategories.map((c) => c.name)
+                                ]
+                                    .map((cat) => DropdownMenuItem(
+                                        value: cat,
+                                        child: Text(cat,
+                                            style: const TextStyle(
+                                                fontSize: 12))))
+                                    .toList(),
+                                onChanged: (val) => setState(
+                                    () => selectedFilterPaidByCategory = val),
                               ),
                             ),
                           ],
@@ -727,14 +1013,17 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                         const SizedBox(height: 6),
                         Expanded(
                           child: filteredPaidByStatement.isEmpty
-                              ? const Center(child: Text('No paid-by records found.'))
+                              ? const Center(
+                                  child: Text('No paid-by records found.'))
                               : SingleChildScrollView(
                                   scrollDirection: Axis.vertical,
                                   child: SingleChildScrollView(
                                     scrollDirection: Axis.horizontal,
                                     child: Table(
-                                      border: TableBorder.all(color: Colors.grey.shade300),
-                                      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                                      border: TableBorder.all(
+                                          color: Colors.grey.shade300),
+                                      defaultVerticalAlignment:
+                                          TableCellVerticalAlignment.middle,
                                       columnWidths: const {
                                         0: IntrinsicColumnWidth(),
                                         1: IntrinsicColumnWidth(),
@@ -746,27 +1035,133 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                       },
                                       children: [
                                         TableRow(
-                                          decoration: BoxDecoration(color: Colors.red.shade700),
+                                          decoration: BoxDecoration(
+                                              color: Colors.red.shade700),
                                           children: const [
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Date', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Payer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('For Person', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Category', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Account', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Narration', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
-                                            Padding(padding: EdgeInsets.all(6.0), child: Text('Amount (₹)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Date',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Payer',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('For Person',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Category',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Account',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Narration',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
+                                            Padding(
+                                                padding: EdgeInsets.all(6.0),
+                                                child: Text('Amount (₹)',
+                                                    style: TextStyle(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 12))),
                                           ],
                                         ),
                                         ...filteredPaidByStatement.map((row) {
                                           return TableRow(
                                             children: [
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['date'].toString(), style: const TextStyle(fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['paidBy'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['expensePerson'].toString(), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['category'].toString(), style: const TextStyle(fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['account'].toString(), style: const TextStyle(fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text(row['narration'].toString().isEmpty ? '-' : row['narration'].toString(), style: const TextStyle(fontSize: 12))),
-                                              Padding(padding: const EdgeInsets.all(6.0), child: Text('₹${(row['amount'] as double).toStringAsFixed(2)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['date'].toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['paidBy'].toString(),
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          color: Colors.blue,
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['expensePerson']
+                                                          .toString(),
+                                                      style: const TextStyle(
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['category'].toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['account'].toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      row['narration']
+                                                              .toString()
+                                                              .isEmpty
+                                                          ? '-'
+                                                          : row['narration']
+                                                              .toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12))),
+                                              Padding(
+                                                  padding: const EdgeInsets.all(
+                                                      6.0),
+                                                  child: Text(
+                                                      '₹${(row['amount'] as double).toStringAsFixed(2)}',
+                                                      style: const TextStyle(
+                                                          color: Colors.red,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 12))),
                                             ],
                                           );
                                         }),
@@ -776,7 +1171,8 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                                 ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
                             color: Colors.red.shade100,
                             borderRadius: BorderRadius.circular(6),
@@ -785,8 +1181,15 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Total Paid:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                              Text('₹${totalPaidAmount.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade900)),
+                              const Text('Total Paid:',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
+                              Text('₹${totalPaidAmount.toStringAsFixed(2)}',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.red.shade900)),
                             ],
                           ),
                         )
@@ -803,18 +1206,23 @@ class _ExpenceScreenState extends State<ExpenceScreen> {
   }
 }
 
-// --- Category Detail Screen: Shows Persons (like Koti, Manasa) inside Category (like Snacks) with New Expense Button ---
+// --- Category Detail Screen ---
 class ExpenseCategoryDetailScreen extends StatefulWidget {
   final ExpenseCategoryData categoryData;
   final String? fromDateStr;
   final String? toDateStr;
-  const ExpenseCategoryDetailScreen({super.key, required this.categoryData, this.fromDateStr, this.toDateStr});
-
+  const ExpenseCategoryDetailScreen(
+      {super.key,
+      required this.categoryData,
+      this.fromDateStr,
+      this.toDateStr});
   @override
-  State<ExpenseCategoryDetailScreen> createState() => _ExpenseCategoryDetailScreenState();
+  State<ExpenseCategoryDetailScreen> createState() =>
+      _ExpenseCategoryDetailScreenState();
 }
 
-class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScreen> {
+class _ExpenseCategoryDetailScreenState
+    extends State<ExpenseCategoryDetailScreen> {
   Future<void> _saveDataToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     var personsData = globalPersons
@@ -836,7 +1244,6 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                   .toList(),
             })
         .toList();
-
     var categoriesData = globalExpenseCategories
         .map((c) => {
               'name': c.name,
@@ -881,27 +1288,40 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
   }
 
   bool _isExpenseEntry(FinanceItem entry) {
-    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') ||
-        entry.category.toLowerCase().contains('transfer');
+    bool isJournalOrTransfer =
+        entry.category.toLowerCase().contains('journal') ||
+            entry.category.toLowerCase().contains('transfer');
     return (entry.amount < 0 || entry.amount == 0.0) && !isJournalOrTransfer;
   }
 
-  void _showAddPersonDialog(StateSetter dialogSetState, Function(String) onPersonAdded) {
+  void _showAddPersonDialog(
+      StateSetter dialogSetState, Function(String) onPersonAdded) {
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Add Expense Person'),
-        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Person Name', border: OutlineInputBorder())),
+        content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+                labelText: 'Person Name', border: OutlineInputBorder())),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white),
             onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
                 String name = controller.text.trim();
                 setState(() {
-                  globalPersons.add(PersonData(id: DateTime.now().toString(), name: name, bankAccounts: [], entries: []));
+                  globalPersons.add(PersonData(
+                      id: DateTime.now().toString(),
+                      name: name,
+                      bankAccounts: [],
+                      entries: []));
                 });
                 await _saveDataToPrefs();
                 dialogSetState(() {
@@ -917,17 +1337,25 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
     );
   }
 
-  void _showAddBankDialog(PersonData targetPerson, StateSetter dialogSetState, Function(String) onBankAdded) {
+  void _showAddBankDialog(PersonData targetPerson, StateSetter dialogSetState,
+      Function(String) onBankAdded) {
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Add Bank Account for ${targetPerson.name}'),
-        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Bank Name', border: OutlineInputBorder())),
+        content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+                labelText: 'Bank Name', border: OutlineInputBorder())),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white),
             onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
                 String bankName = controller.text.trim();
@@ -949,7 +1377,8 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
   }
 
   void _openEntryDialog({FinanceItem? existingItem}) {
-    String selectedExpensePerson = existingItem?.person ?? (globalPersons.isNotEmpty ? globalPersons.first.name : '');
+    String selectedExpensePerson = existingItem?.person ??
+        (globalPersons.isNotEmpty ? globalPersons.first.name : '');
     String selectedCategoryName = widget.categoryData.name;
     String selectedSubCategory = '';
     if (existingItem != null && existingItem.category.contains(' - ')) {
@@ -957,11 +1386,12 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
     } else if (widget.categoryData.subCategories.isNotEmpty) {
       selectedSubCategory = widget.categoryData.subCategories.first;
     }
-
-    String selectedWhoPaid = globalPersons.isNotEmpty ? globalPersons.first.name : '';
+    String selectedWhoPaid =
+        globalPersons.isNotEmpty ? globalPersons.first.name : '';
     if (existingItem != null && existingItem.description.contains("Paid by ")) {
       try {
-        String payerName = existingItem.description.split("Paid by ")[1].split(" | ")[0].trim();
+        String payerName =
+            existingItem.description.split("Paid by ")[1].split(" | ")[0].trim();
         if (globalPersons.any((p) => p.name == payerName)) {
           selectedWhoPaid = payerName;
         }
@@ -969,14 +1399,15 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
     }
     String selectedAccount = existingItem?.depositAccount ?? 'Cash';
     final dateController = TextEditingController(
-      text: existingItem?.date ?? "${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}",
+      text: existingItem?.date ??
+          "${DateTime.now().day.toString().padLeft(2, '0')}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().year}",
     );
     final descController = TextEditingController(
         text: existingItem != null && existingItem.description.contains(" | ")
             ? existingItem.description.split(" | ").last
             : (existingItem?.description ?? ''));
-    final amountController = TextEditingController(text: existingItem != null ? existingItem.amount.abs().toString() : '');
-
+    final amountController = TextEditingController(
+        text: existingItem != null ? existingItem.amount.abs().toString() : '');
     showDialog(
       context: context,
       builder: (context) {
@@ -984,16 +1415,19 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
           builder: (context, setDialogState) {
             PersonData payerPerson = globalPersons.firstWhere(
               (p) => p.name == selectedWhoPaid,
-              orElse: () => globalPersons.isNotEmpty ? globalPersons.first : PersonData(id: '0', name: 'Default', bankAccounts: [], entries: []),
+              orElse: () => globalPersons.isNotEmpty
+                  ? globalPersons.first
+                  : PersonData(
+                      id: '0', name: 'Default', bankAccounts: [], entries: []),
             );
-            
+
             bool hasBankAccounts = payerPerson.bankAccounts.isNotEmpty;
             List<String> accounts = ['Cash', ...payerPerson.bankAccounts];
             if (!hasBankAccounts || !accounts.contains(selectedAccount)) {
               selectedAccount = 'Cash';
             }
-
-            ExpenseCategoryData currentCatObj = globalExpenseCategories.firstWhere(
+            ExpenseCategoryData currentCatObj =
+                globalExpenseCategories.firstWhere(
               (c) => c.name == selectedCategoryName,
               orElse: () => widget.categoryData,
             );
@@ -1006,9 +1440,10 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
             } else {
               selectedSubCategory = '';
             }
-
             return AlertDialog(
-              title: Text(existingItem == null ? 'New Expense (${widget.categoryData.name})' : 'Edit Expense Entry'),
+              title: Text(existingItem == null
+                  ? 'New Expense (${widget.categoryData.name})'
+                  : 'Edit Expense Entry'),
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -1017,9 +1452,19 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: globalPersons.any((p) => p.name == selectedExpensePerson) ? selectedExpensePerson : (globalPersons.isNotEmpty ? globalPersons.first.name : null),
-                            decoration: const InputDecoration(labelText: 'Expense Person (Statement)', border: OutlineInputBorder()),
-                            items: globalPersons.map((p) => DropdownMenuItem(value: p.name, child: Text(p.name))).toList(),
+                            value: globalPersons.any(
+                                    (p) => p.name == selectedExpensePerson)
+                                ? selectedExpensePerson
+                                : (globalPersons.isNotEmpty
+                                    ? globalPersons.first.name
+                                    : null),
+                            decoration: const InputDecoration(
+                                labelText: 'Expense Person (Statement)',
+                                border: OutlineInputBorder()),
+                            items: globalPersons
+                                .map((p) => DropdownMenuItem(
+                                    value: p.name, child: Text(p.name)))
+                                .toList(),
                             onChanged: (val) {
                               setDialogState(() {
                                 if (val != null) selectedExpensePerson = val;
@@ -1028,8 +1473,10 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.add_circle, color: Colors.red),
-                          onPressed: () => _showAddPersonDialog(setDialogState, (newName) {
+                          icon:
+                              const Icon(Icons.add_circle, color: Colors.red),
+                          onPressed: () =>
+                              _showAddPersonDialog(setDialogState, (newName) {
                             selectedExpensePerson = newName;
                           }),
                         )
@@ -1041,32 +1488,60 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                         children: [
                           Expanded(
                             child: DropdownButtonFormField<String>(
-                              value: subCats.contains(selectedSubCategory) ? selectedSubCategory : subCats.first,
-                              decoration: const InputDecoration(labelText: 'Sub Category', border: OutlineInputBorder()),
-                              items: subCats.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                              onChanged: (val) => setDialogState(() => selectedSubCategory = val!),
+                              value: subCats.contains(selectedSubCategory)
+                                  ? selectedSubCategory
+                                  : subCats.first,
+                              decoration: const InputDecoration(
+                                  labelText: 'Sub Category',
+                                  border: OutlineInputBorder()),
+                              items: subCats
+                                  .map((s) => DropdownMenuItem(
+                                      value: s, child: Text(s)))
+                                  .toList(),
+                              onChanged: (val) => setDialogState(
+                                  () => selectedSubCategory = val!),
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.add_circle, color: Colors.red),
+                            icon: const Icon(Icons.add_circle,
+                                color: Colors.red),
                             onPressed: () {
                               final subController = TextEditingController();
                               showDialog(
                                 context: context,
                                 builder: (BuildContext dialogContext) {
                                   return AlertDialog(
-                                    title: Text('Add Sub-Category under $selectedCategoryName'),
-                                    content: TextField(controller: subController, decoration: const InputDecoration(labelText: 'Sub-Category Name', border: OutlineInputBorder())),
+                                    title: Text(
+                                        'Add Sub-Category under $selectedCategoryName'),
+                                    content: TextField(
+                                        controller: subController,
+                                        decoration: const InputDecoration(
+                                            labelText: 'Sub-Category Name',
+                                            border: OutlineInputBorder())),
                                     actions: [
-                                      TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+                                      TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(dialogContext),
+                                          child: const Text('Cancel')),
                                       ElevatedButton(
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+                                        style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.red.shade700,
+                                            foregroundColor: Colors.white),
                                         onPressed: () async {
-                                          String newSub = subController.text.trim();
+                                          String newSub =
+                                              subController.text.trim();
                                           if (newSub.isNotEmpty) {
                                             setState(() {
-                                              ExpenseCategoryData catObj = globalExpenseCategories.firstWhere((c) => c.name == selectedCategoryName, orElse: () => widget.categoryData);
-                                              if (!catObj.subCategories.contains(newSub)) {
+                                              ExpenseCategoryData catObj =
+                                                  globalExpenseCategories
+                                                      .firstWhere(
+                                                          (c) =>
+                                                              c.name ==
+                                                              selectedCategoryName,
+                                                          orElse: () => widget
+                                                              .categoryData);
+                                              if (!catObj.subCategories
+                                                  .contains(newSub)) {
                                                 catObj.subCategories.add(newSub);
                                               }
                                             });
@@ -1093,9 +1568,19 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: globalPersons.any((p) => p.name == selectedWhoPaid) ? selectedWhoPaid : (globalPersons.isNotEmpty ? globalPersons.first.name : null),
-                            decoration: const InputDecoration(labelText: 'Who Paid (Deduction Target)', border: OutlineInputBorder()),
-                            items: globalPersons.map((p) => DropdownMenuItem(value: p.name, child: Text(p.name))).toList(),
+                            value: globalPersons
+                                    .any((p) => p.name == selectedWhoPaid)
+                                ? selectedWhoPaid
+                                : (globalPersons.isNotEmpty
+                                    ? globalPersons.first.name
+                                    : null),
+                            decoration: const InputDecoration(
+                                labelText: 'Who Paid (Deduction Target)',
+                                border: OutlineInputBorder()),
+                            items: globalPersons
+                                .map((p) => DropdownMenuItem(
+                                    value: p.name, child: Text(p.name)))
+                                .toList(),
                             onChanged: (val) {
                               setDialogState(() {
                                 if (val != null) {
@@ -1107,8 +1592,10 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.add_circle, color: Colors.red),
-                          onPressed: () => _showAddPersonDialog(setDialogState, (newName) {
+                          icon:
+                              const Icon(Icons.add_circle, color: Colors.red),
+                          onPressed: () =>
+                              _showAddPersonDialog(setDialogState, (newName) {
                             selectedWhoPaid = newName;
                             selectedAccount = 'Cash';
                           }),
@@ -1122,16 +1609,25 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               value: selectedAccount,
-                              decoration: const InputDecoration(labelText: 'Paid From Account / Cash', border: OutlineInputBorder()),
-                              items: accounts.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
-                              onChanged: (val) => setDialogState(() => selectedAccount = val!),
+                              decoration: const InputDecoration(
+                                  labelText: 'Paid From Account / Cash',
+                                  border: OutlineInputBorder()),
+                              items: accounts
+                                  .map((a) => DropdownMenuItem(
+                                      value: a, child: Text(a)))
+                                  .toList(),
+                              onChanged: (val) =>
+                                  setDialogState(() => selectedAccount = val!),
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.add_circle, color: Colors.red),
+                            icon: const Icon(Icons.add_circle,
+                                color: Colors.red),
                             onPressed: () {
-                              if (globalPersons.any((p) => p.name == selectedWhoPaid)) {
-                                _showAddBankDialog(payerPerson, setDialogState, (newBank) {
+                              if (globalPersons
+                                  .any((p) => p.name == selectedWhoPaid)) {
+                                _showAddBankDialog(payerPerson, setDialogState,
+                                    (newBank) {
                                   selectedAccount = newBank;
                                 });
                               }
@@ -1141,31 +1637,54 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                       ),
                     ],
                     const SizedBox(height: 12),
-                    TextField(controller: dateController, decoration: const InputDecoration(labelText: 'Date (dd-mm-yyyy)', border: OutlineInputBorder())),
+                    TextField(
+                        controller: dateController,
+                        decoration: const InputDecoration(
+                            labelText: 'Date (dd-mm-yyyy)',
+                            border: OutlineInputBorder())),
                     const SizedBox(height: 12),
-                    TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description / Narration', border: OutlineInputBorder())),
+                    TextField(
+                        controller: descController,
+                        decoration: const InputDecoration(
+                            labelText: 'Description / Narration',
+                            border: OutlineInputBorder())),
                     const SizedBox(height: 12),
-                    TextField(controller: amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder())),
+                    TextField(
+                        controller: amountController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                            labelText: 'Amount (₹)',
+                            border: OutlineInputBorder())),
                   ],
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel')),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.white),
                   onPressed: () async {
-                    if (amountController.text.trim().isNotEmpty && selectedWhoPaid.isNotEmpty && selectedExpensePerson.isNotEmpty) {
-                      double amt = double.tryParse(amountController.text.trim()) ?? 0.0;
-                      String fullCategoryName = selectedSubCategory.isEmpty ? selectedCategoryName : "$selectedCategoryName - $selectedSubCategory";
-
+                    if (amountController.text.trim().isNotEmpty &&
+                        selectedWhoPaid.isNotEmpty &&
+                        selectedExpensePerson.isNotEmpty) {
+                      double amt =
+                          double.tryParse(amountController.text.trim()) ?? 0.0;
+                      String fullCategoryName = selectedSubCategory.isEmpty
+                          ? selectedCategoryName
+                          : "$selectedCategoryName - $selectedSubCategory";
                       setState(() {
                         if (existingItem != null) {
                           for (var p in globalPersons) {
                             p.entries.removeWhere((e) => e.id == existingItem.id);
                           }
                         }
-                        String uniqueId = existingItem?.id ?? DateTime.now().toString();
-                        PersonData payerTarget = globalPersons.firstWhere((p) => p.name == selectedWhoPaid);
+                        String uniqueId =
+                            existingItem?.id ?? DateTime.now().toString();
+                        PersonData payerTarget = globalPersons
+                            .firstWhere((p) => p.name == selectedWhoPaid);
                         payerTarget.entries.add(
                           FinanceItem(
                             id: uniqueId,
@@ -1173,9 +1692,11 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                             amount: -amt.abs(),
                             person: selectedExpensePerson,
                             category: fullCategoryName,
-                            depositAccount: hasBankAccounts ? selectedAccount : 'Cash',
+                            depositAccount:
+                                hasBankAccounts ? selectedAccount : 'Cash',
                             date: dateController.text.trim(),
-                            description: "Paid by $selectedWhoPaid | ${descController.text.trim()}",
+                            description:
+                                "Paid by $selectedWhoPaid | ${descController.text.trim()}",
                           ),
                         );
                       });
@@ -1199,13 +1720,13 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
     for (var p in globalPersons) {
       for (var e in p.entries) {
         if (_isExpenseEntry(e) && _isDateInRange(e.date)) {
-          if (e.category == widget.categoryData.name || e.category.startsWith("${widget.categoryData.name} -")) {
+          if (e.category == widget.categoryData.name ||
+              e.category.startsWith("${widget.categoryData.name} -")) {
             categoryEntries.add(e);
           }
         }
       }
     }
-
     Map<String, List<FinanceItem>> personsMap = {};
     for (var entry in categoryEntries) {
       String personName = entry.person.isEmpty ? 'General' : entry.person;
@@ -1214,12 +1735,12 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
       }
       personsMap[personName]!.add(entry);
     }
-
-    double categoryTotal = categoryEntries.fold(0.0, (sum, item) => sum + item.amount.abs());
-
+    double categoryTotal =
+        categoryEntries.fold(0.0, (sum, item) => sum + item.amount.abs());
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.categoryData.name} Persons', style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text('${widget.categoryData.name} Persons',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.red.shade700,
         foregroundColor: Colors.white,
       ),
@@ -1235,8 +1756,16 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Total ${widget.categoryData.name} Expense:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
-                    Text('₹${categoryTotal.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
+                    Text('Total ${widget.categoryData.name} Expense:',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red.shade800)),
+                    Text('₹${categoryTotal.toStringAsFixed(2)}',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red.shade800)),
                   ],
                 ),
               ),
@@ -1248,34 +1777,51 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
                 ElevatedButton.icon(
                   onPressed: () => _openEntryDialog(),
                   icon: const Icon(Icons.add, size: 14),
-                  label: const Text('New Expense', style: TextStyle(fontSize: 11)),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                  label:
+                      const Text('New Expense', style: TextStyle(fontSize: 11)),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4)),
                 ),
               ],
             ),
             const SizedBox(height: 6),
             Expanded(
               child: personsMap.isEmpty
-                  ? const Center(child: Text('No persons found for this category.'))
+                  ? const Center(
+                      child: Text('No persons found for this category.'))
                   : ListView(
                       children: personsMap.entries.map((entryGroup) {
                         String personName = entryGroup.key;
                         List<FinanceItem> entries = entryGroup.value;
-                        double personTotal = entries.fold(0.0, (sum, e) => sum + e.amount.abs());
-
+                        double personTotal = entries.fold(
+                            0.0, (sum, e) => sum + e.amount.abs());
                         return Card(
                           margin: const EdgeInsets.only(bottom: 6),
                           child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            leading: const CircleAvatar(backgroundColor: Colors.red, radius: 16, child: Icon(Icons.person, color: Colors.white, size: 18)),
-                            title: Text(personName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            subtitle: Text('Entries: ${entries.length} | Total: ₹${personTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11)),
-                            trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            leading: const CircleAvatar(
+                                backgroundColor: Colors.red,
+                                radius: 16,
+                                child: Icon(Icons.person,
+                                    color: Colors.white, size: 18)),
+                            title: Text(personName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Text(
+                                'Entries: ${entries.length} | Total: ₹${personTotal.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 11)),
+                            trailing: const Icon(Icons.arrow_forward_ios,
+                                size: 14, color: Colors.grey),
                             onTap: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => CategoryPersonEntriesScreen(
+                                  builder: (context) =>
+                                      CategoryPersonEntriesScreen(
                                     categoryName: widget.categoryData.name,
                                     personName: personName,
                                     fromDateStr: widget.fromDateStr,
@@ -1298,19 +1844,25 @@ class _ExpenseCategoryDetailScreenState extends State<ExpenseCategoryDetailScree
   }
 }
 
-// --- Screen when clicking a person inside a category (Shows exact entries with Edit/Delete) ---
+// --- Category Person Entries Screen ---
 class CategoryPersonEntriesScreen extends StatefulWidget {
   final String categoryName;
   final String personName;
   final String? fromDateStr;
   final String? toDateStr;
-  const CategoryPersonEntriesScreen({super.key, required this.categoryName, required this.personName, this.fromDateStr, this.toDateStr});
-
+  const CategoryPersonEntriesScreen(
+      {super.key,
+      required this.categoryName,
+      required this.personName,
+      this.fromDateStr,
+      this.toDateStr});
   @override
-  State<CategoryPersonEntriesScreen> createState() => _CategoryPersonEntriesScreenState();
+  State<CategoryPersonEntriesScreen> createState() =>
+      _CategoryPersonEntriesScreenState();
 }
 
-class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScreen> {
+class _CategoryPersonEntriesScreenState
+    extends State<CategoryPersonEntriesScreen> {
   Future<void> _saveDataToPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     var personsData = globalPersons
@@ -1332,7 +1884,6 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                   .toList(),
             })
         .toList();
-
     var categoriesData = globalExpenseCategories
         .map((c) => {
               'name': c.name,
@@ -1377,8 +1928,9 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
   }
 
   bool _isExpenseEntry(FinanceItem entry) {
-    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') ||
-        entry.category.toLowerCase().contains('transfer');
+    bool isJournalOrTransfer =
+        entry.category.toLowerCase().contains('journal') ||
+            entry.category.toLowerCase().contains('transfer');
     return (entry.amount < 0 || entry.amount == 0.0) && !isJournalOrTransfer;
   }
 
@@ -1389,11 +1941,11 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
     if (entry.category.contains(' - ')) {
       selectedSubCategory = entry.category.split(' - ').last;
     }
-
     String selectedWhoPaid = widget.personName;
     if (entry.description.contains("Paid by ")) {
       try {
-        String payerName = entry.description.split("Paid by ")[1].split(" | ")[0].trim();
+        String payerName =
+            entry.description.split("Paid by ")[1].split(" | ")[0].trim();
         if (globalPersons.any((p) => p.name == payerName)) {
           selectedWhoPaid = payerName;
         }
@@ -1402,9 +1954,11 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
     String selectedAccount = entry.depositAccount;
     final dateController = TextEditingController(text: entry.date);
     final descController = TextEditingController(
-        text: entry.description.contains(" | ") ? entry.description.split(" | ").last : entry.description);
-    final amountController = TextEditingController(text: entry.amount.abs().toString());
-
+        text: entry.description.contains(" | ")
+            ? entry.description.split(" | ").last
+            : entry.description);
+    final amountController =
+        TextEditingController(text: entry.amount.abs().toString());
     showDialog(
       context: context,
       builder: (context) {
@@ -1412,18 +1966,22 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
           builder: (context, setDialogState) {
             PersonData payerPerson = globalPersons.firstWhere(
               (p) => p.name == selectedWhoPaid,
-              orElse: () => globalPersons.isNotEmpty ? globalPersons.first : PersonData(id: '0', name: 'Default', bankAccounts: [], entries: []),
+              orElse: () => globalPersons.isNotEmpty
+                  ? globalPersons.first
+                  : PersonData(
+                      id: '0', name: 'Default', bankAccounts: [], entries: []),
             );
-            
+
             bool hasBankAccounts = payerPerson.bankAccounts.isNotEmpty;
             List<String> accounts = ['Cash', ...payerPerson.bankAccounts];
             if (!hasBankAccounts || !accounts.contains(selectedAccount)) {
               selectedAccount = 'Cash';
             }
-
-            ExpenseCategoryData currentCatObj = globalExpenseCategories.firstWhere(
+            ExpenseCategoryData currentCatObj =
+                globalExpenseCategories.firstWhere(
               (c) => c.name == selectedCategoryName,
-              orElse: () => ExpenseCategoryData(name: selectedCategoryName, subCategories: []),
+              orElse: () => ExpenseCategoryData(
+                  name: selectedCategoryName, subCategories: []),
             );
             bool hasSubCategories = currentCatObj.subCategories.isNotEmpty;
             List<String> subCats = currentCatObj.subCategories;
@@ -1434,7 +1992,6 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
             } else {
               selectedSubCategory = '';
             }
-
             return AlertDialog(
               title: Text('Edit Expense Entry (${entry.category})'),
               content: SingleChildScrollView(
@@ -1445,9 +2002,19 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: globalPersons.any((p) => p.name == selectedExpensePerson) ? selectedExpensePerson : (globalPersons.isNotEmpty ? globalPersons.first.name : null),
-                            decoration: const InputDecoration(labelText: 'Expense Person (Statement)', border: OutlineInputBorder()),
-                            items: globalPersons.map((p) => DropdownMenuItem(value: p.name, child: Text(p.name))).toList(),
+                            value: globalPersons.any(
+                                    (p) => p.name == selectedExpensePerson)
+                                ? selectedExpensePerson
+                                : (globalPersons.isNotEmpty
+                                    ? globalPersons.first.name
+                                    : null),
+                            decoration: const InputDecoration(
+                                labelText: 'Expense Person (Statement)',
+                                border: OutlineInputBorder()),
+                            items: globalPersons
+                                .map((p) => DropdownMenuItem(
+                                    value: p.name, child: Text(p.name)))
+                                .toList(),
                             onChanged: (val) {
                               setDialogState(() {
                                 if (val != null) selectedExpensePerson = val;
@@ -1463,15 +2030,24 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: selectedCategoryName,
-                            decoration: const InputDecoration(labelText: 'Expense Category', border: OutlineInputBorder()),
-                            items: globalExpenseCategories.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name))).toList(),
+                            decoration: const InputDecoration(
+                                labelText: 'Expense Category',
+                                border: OutlineInputBorder()),
+                            items: globalExpenseCategories
+                                .map((c) => DropdownMenuItem(
+                                    value: c.name, child: Text(c.name)))
+                                .toList(),
                             onChanged: (val) {
                               if (val != null) {
                                 setDialogState(() {
                                   selectedCategoryName = val;
-                                  ExpenseCategoryData catObj = globalExpenseCategories.firstWhere((c) => c.name == val, orElse: () => currentCatObj);
+                                  ExpenseCategoryData catObj =
+                                      globalExpenseCategories.firstWhere(
+                                          (c) => c.name == val,
+                                          orElse: () => currentCatObj);
                                   if (catObj.subCategories.isNotEmpty) {
-                                    selectedSubCategory = catObj.subCategories.first;
+                                    selectedSubCategory =
+                                        catObj.subCategories.first;
                                   } else {
                                     selectedSubCategory = '';
                                   }
@@ -1488,10 +2064,18 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                         children: [
                           Expanded(
                             child: DropdownButtonFormField<String>(
-                              value: subCats.contains(selectedSubCategory) ? selectedSubCategory : subCats.first,
-                              decoration: const InputDecoration(labelText: 'Sub Category', border: OutlineInputBorder()),
-                              items: subCats.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                              onChanged: (val) => setDialogState(() => selectedSubCategory = val!),
+                              value: subCats.contains(selectedSubCategory)
+                                  ? selectedSubCategory
+                                  : subCats.first,
+                              decoration: const InputDecoration(
+                                  labelText: 'Sub Category',
+                                  border: OutlineInputBorder()),
+                              items: subCats
+                                  .map((s) => DropdownMenuItem(
+                                      value: s, child: Text(s)))
+                                  .toList(),
+                              onChanged: (val) => setDialogState(
+                                  () => selectedSubCategory = val!),
                             ),
                           ),
                         ],
@@ -1502,9 +2086,19 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            value: globalPersons.any((p) => p.name == selectedWhoPaid) ? selectedWhoPaid : (globalPersons.isNotEmpty ? globalPersons.first.name : null),
-                            decoration: const InputDecoration(labelText: 'Who Paid (Deduction Target)', border: OutlineInputBorder()),
-                            items: globalPersons.map((p) => DropdownMenuItem(value: p.name, child: Text(p.name))).toList(),
+                            value: globalPersons
+                                    .any((p) => p.name == selectedWhoPaid)
+                                ? selectedWhoPaid
+                                : (globalPersons.isNotEmpty
+                                    ? globalPersons.first.name
+                                    : null),
+                            decoration: const InputDecoration(
+                                labelText: 'Who Paid (Deduction Target)',
+                                border: OutlineInputBorder()),
+                            items: globalPersons
+                                .map((p) => DropdownMenuItem(
+                                    value: p.name, child: Text(p.name)))
+                                .toList(),
                             onChanged: (val) {
                               setDialogState(() {
                                 if (val != null) {
@@ -1524,37 +2118,63 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               value: selectedAccount,
-                              decoration: const InputDecoration(labelText: 'Paid From Account / Cash', border: OutlineInputBorder()),
-                              items: accounts.map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
-                              onChanged: (val) => setDialogState(() => selectedAccount = val!),
+                              decoration: const InputDecoration(
+                                  labelText: 'Paid From Account / Cash',
+                                  border: OutlineInputBorder()),
+                              items: accounts
+                                  .map((a) => DropdownMenuItem(
+                                      value: a, child: Text(a)))
+                                  .toList(),
+                              onChanged: (val) =>
+                                  setDialogState(() => selectedAccount = val!),
                             ),
                           ),
                         ],
                       ),
                     ],
                     const SizedBox(height: 12),
-                    TextField(controller: dateController, decoration: const InputDecoration(labelText: 'Date (dd-mm-yyyy)', border: OutlineInputBorder())),
+                    TextField(
+                        controller: dateController,
+                        decoration: const InputDecoration(
+                            labelText: 'Date (dd-mm-yyyy)',
+                            border: OutlineInputBorder())),
                     const SizedBox(height: 12),
-                    TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description / Narration', border: OutlineInputBorder())),
+                    TextField(
+                        controller: descController,
+                        decoration: const InputDecoration(
+                            labelText: 'Description / Narration',
+                            border: OutlineInputBorder())),
                     const SizedBox(height: 12),
-                    TextField(controller: amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder())),
+                    TextField(
+                        controller: amountController,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                            labelText: 'Amount (₹)',
+                            border: OutlineInputBorder())),
                   ],
                 ),
               ),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel')),
                 ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.white),
                   onPressed: () async {
                     if (amountController.text.trim().isNotEmpty) {
-                      double amt = double.tryParse(amountController.text.trim()) ?? 0.0;
-                      String fullCategoryName = selectedSubCategory.isEmpty ? selectedCategoryName : "$selectedCategoryName - $selectedSubCategory";
-
+                      double amt =
+                          double.tryParse(amountController.text.trim()) ?? 0.0;
+                      String fullCategoryName = selectedSubCategory.isEmpty
+                          ? selectedCategoryName
+                          : "$selectedCategoryName - $selectedSubCategory";
                       setState(() {
                         for (var p in globalPersons) {
                           p.entries.removeWhere((e) => e.id == entry.id);
                         }
-                        PersonData payerTarget = globalPersons.firstWhere((p) => p.name == selectedWhoPaid);
+                        PersonData payerTarget = globalPersons
+                            .firstWhere((p) => p.name == selectedWhoPaid);
                         payerTarget.entries.add(
                           FinanceItem(
                             id: entry.id,
@@ -1562,9 +2182,11 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                             amount: -amt.abs(),
                             person: selectedExpensePerson,
                             category: fullCategoryName,
-                            depositAccount: hasBankAccounts ? selectedAccount : 'Cash',
+                            depositAccount:
+                                hasBankAccounts ? selectedAccount : 'Cash',
                             date: dateController.text.trim(),
-                            description: "Paid by $selectedWhoPaid | ${descController.text.trim()}",
+                            description:
+                                "Paid by $selectedWhoPaid | ${descController.text.trim()}",
                           ),
                         );
                       });
@@ -1587,18 +2209,21 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
     List<FinanceItem> entries = [];
     for (var p in globalPersons) {
       for (var e in p.entries) {
-        if (_isExpenseEntry(e) && _isDateInRange(e.date) && e.person == widget.personName) {
-          if (e.category == widget.categoryName || e.category.startsWith("${widget.categoryName} -")) {
+        if (_isExpenseEntry(e) &&
+            _isDateInRange(e.date) &&
+            e.person == widget.personName) {
+          if (e.category == widget.categoryName ||
+              e.category.startsWith("${widget.categoryName} -")) {
             entries.add(e);
           }
         }
       }
     }
     double total = entries.fold(0.0, (sum, item) => sum + item.amount.abs());
-
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.personName} - ${widget.categoryName}', style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text('${widget.personName} - ${widget.categoryName}',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.red.shade700,
         foregroundColor: Colors.white,
       ),
@@ -1614,8 +2239,16 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Total Amount:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
-                    Text('₹${total.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
+                    Text('Total Amount:',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red.shade800)),
+                    Text('₹${total.toStringAsFixed(2)}',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red.shade800)),
                   ],
                 ),
               ),
@@ -1631,24 +2264,43 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
                         return Card(
                           margin: const EdgeInsets.only(bottom: 6),
                           child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            leading: const CircleAvatar(backgroundColor: Colors.red, radius: 15, child: Icon(Icons.shopping_cart, color: Colors.white, size: 16)),
-                            title: Text('${entry.category} - ₹${entry.amount.abs().toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            subtitle: Text('Account: ${entry.depositAccount} | Date: ${entry.date}${entry.description.isNotEmpty ? ' | Note: ${entry.description}' : ''}', style: const TextStyle(fontSize: 11)),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            leading: const CircleAvatar(
+                                backgroundColor: Colors.red,
+                                radius: 15,
+                                child: Icon(Icons.shopping_cart,
+                                    color: Colors.white, size: 16)),
+                            title: Text(
+                                '${entry.category} - ₹${entry.amount.abs().toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 13)),
+                            subtitle: Text(
+                                'Account: ${entry.depositAccount} | Date: ${entry.date}${entry.description.isNotEmpty ? ' | Note: ${entry.description}' : ''}',
+                                style: const TextStyle(fontSize: 11)),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                InkWell(onTap: () => _openEditDialog(entry), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.edit, color: Colors.blue, size: 16))),
+                                InkWell(
+                                    onTap: () => _openEditDialog(entry),
+                                    child: const Padding(
+                                        padding: EdgeInsets.all(4),
+                                        child: Icon(Icons.edit,
+                                            color: Colors.blue, size: 16))),
                                 InkWell(
                                   onTap: () async {
                                     setState(() {
                                       for (var p in globalPersons) {
-                                        p.entries.removeWhere((e) => e.id == entry.id);
+                                        p.entries
+                                            .removeWhere((e) => e.id == entry.id);
                                       }
                                     });
                                     await _saveDataToPrefs();
                                   },
-                                  child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.delete, color: Colors.red, size: 16)),
+                                  child: const Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(Icons.delete,
+                                          color: Colors.red, size: 16)),
                                 ),
                               ],
                             ),
@@ -1664,15 +2316,16 @@ class _CategoryPersonEntriesScreenState extends State<CategoryPersonEntriesScree
   }
 }
 
-// --- Person Detail Screen (Shows Categories under Person like Koti -> Snacks) ---
+// --- Person Detail Screen ---
 class ExpensePersonDetailScreen extends StatefulWidget {
   final PersonData person;
   final String? fromDateStr;
   final String? toDateStr;
-  const ExpensePersonDetailScreen({super.key, required this.person, this.fromDateStr, this.toDateStr});
-
+  const ExpensePersonDetailScreen(
+      {super.key, required this.person, this.fromDateStr, this.toDateStr});
   @override
-  State<ExpensePersonDetailScreen> createState() => _ExpensePersonDetailScreenState();
+  State<ExpensePersonDetailScreen> createState() =>
+      _ExpensePersonDetailScreenState();
 }
 
 class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
@@ -1697,7 +2350,6 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
                   .toList(),
             })
         .toList();
-
     var categoriesData = globalExpenseCategories
         .map((c) => {
               'name': c.name,
@@ -1742,8 +2394,9 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
   }
 
   bool _isExpenseEntry(FinanceItem entry) {
-    bool isJournalOrTransfer = entry.category.toLowerCase().contains('journal') ||
-        entry.category.toLowerCase().contains('transfer');
+    bool isJournalOrTransfer =
+        entry.category.toLowerCase().contains('journal') ||
+            entry.category.toLowerCase().contains('transfer');
     return entry.amount < 0 && !isJournalOrTransfer;
   }
 
@@ -1753,11 +2406,18 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Add Bank Account for ${widget.person.name}'),
-        content: TextField(controller: controller, decoration: const InputDecoration(labelText: 'Bank Name', border: OutlineInputBorder())),
+        content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+                labelText: 'Bank Name', border: OutlineInputBorder())),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white),
             onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
                 setState(() {
@@ -1779,12 +2439,13 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
     List<FinanceItem> displayExpenseEntries = [];
     for (var p in globalPersons) {
       for (var e in p.entries) {
-        if (_isExpenseEntry(e) && _isDateInRange(e.date) && e.person == widget.person.name) {
+        if (_isExpenseEntry(e) &&
+            _isDateInRange(e.date) &&
+            e.person == widget.person.name) {
           displayExpenseEntries.add(e);
         }
       }
     }
-
     Map<String, List<FinanceItem>> categoriesMap = {};
     for (var entry in displayExpenseEntries) {
       String baseCat = entry.category.split(' - ')[0];
@@ -1793,12 +2454,12 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
       }
       categoriesMap[baseCat]!.add(entry);
     }
-
-    double personTotalExpense = displayExpenseEntries.fold(0.0, (sum, item) => sum + item.amount.abs());
-
+    double personTotalExpense =
+        displayExpenseEntries.fold(0.0, (sum, item) => sum + item.amount.abs());
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.person.name}\'s Categories', style: const TextStyle(fontWeight: FontWeight.bold)),
+        title: Text('${widget.person.name}\'s Categories',
+            style: const TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.red.shade700,
         foregroundColor: Colors.white,
       ),
@@ -1810,14 +2471,23 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
             Card(
               elevation: 2,
               color: Colors.red.shade50,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
               child: Padding(
                 padding: const EdgeInsets.all(10.0),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Total Expenses (${widget.person.name}):', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
-                    Text('₹${personTotalExpense.toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.red.shade800)),
+                    Text('Total Expenses (${widget.person.name}):',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red.shade800)),
+                    Text('₹${personTotalExpense.toStringAsFixed(2)}',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red.shade800)),
                   ],
                 ),
               ),
@@ -1826,17 +2496,28 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(child: Text('Bank Accounts: ${widget.person.bankAccounts.isEmpty ? "Cash Only" : widget.person.bankAccounts.join(", ")}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11), overflow: TextOverflow.ellipsis)),
+                Expanded(
+                    child: Text(
+                        'Bank Accounts: ${widget.person.bankAccounts.isEmpty ? "Cash Only" : widget.person.bankAccounts.join(", ")}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 11),
+                        overflow: TextOverflow.ellipsis)),
                 ElevatedButton.icon(
                   onPressed: _showAddBankDialog,
                   icon: const Icon(Icons.account_balance, size: 12),
-                  label: const Text('Add Bank', style: TextStyle(fontSize: 11)),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2)),
+                  label:
+                      const Text('Add Bank', style: TextStyle(fontSize: 11)),
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2)),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            const Text('Categories', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+            const Text('Categories',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             Expanded(
               child: categoriesMap.isEmpty
@@ -1845,21 +2526,32 @@ class _ExpensePersonDetailScreenState extends State<ExpensePersonDetailScreen> {
                       children: categoriesMap.entries.map((catGroup) {
                         String catName = catGroup.key;
                         List<FinanceItem> entries = catGroup.value;
-                        double catTotal = entries.fold(0.0, (sum, e) => sum + e.amount.abs());
-
+                        double catTotal = entries.fold(
+                            0.0, (sum, e) => sum + e.amount.abs());
                         return Card(
                           margin: const EdgeInsets.only(bottom: 6),
                           child: ListTile(
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            leading: const CircleAvatar(backgroundColor: Colors.red, radius: 16, child: Icon(Icons.shopping_cart, color: Colors.white, size: 18)),
-                            title: Text(catName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            subtitle: Text('Entries: ${entries.length} | Total: ₹${catTotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 11)),
-                            trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            leading: const CircleAvatar(
+                                backgroundColor: Colors.red,
+                                radius: 16,
+                                child: Icon(Icons.shopping_cart,
+                                    color: Colors.white, size: 18)),
+                            title: Text(catName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 14)),
+                            subtitle: Text(
+                                'Entries: ${entries.length} | Total: ₹${catTotal.toStringAsFixed(2)}',
+                                style: const TextStyle(fontSize: 11)),
+                            trailing: const Icon(Icons.arrow_forward_ios,
+                                size: 14, color: Colors.grey),
                             onTap: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => CategoryPersonEntriesScreen(
+                                  builder: (context) =>
+                                      CategoryPersonEntriesScreen(
                                     categoryName: catName,
                                     personName: widget.person.name,
                                     fromDateStr: widget.fromDateStr,
