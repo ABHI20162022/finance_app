@@ -1,3 +1,4 @@
+Kotlin
 allprojects {
     repositories {
         google()
@@ -17,6 +18,18 @@ subprojects {
 }
 subprojects {
     project.evaluationDependsOn(":app")
+}
+subprojects {
+    afterEvaluate {
+        val androidExt = extensions.findByName("android")
+        if (androidExt != null) {
+            try {
+                val method = androidExt.javaClass.getMethod("setCompileSdk", Int::class.javaPrimitiveType)
+                method.invoke(androidExt, 36)
+            } catch (_: Exception) {
+            }
+        }
+    }
 }
 
 tasks.register<Delete>("clean") {
