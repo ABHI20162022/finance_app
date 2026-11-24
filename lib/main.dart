@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'models/finance_model.dart';
 import 'screens/income_screen.dart';
@@ -11,25 +11,39 @@ import 'screens/fixed_expenses_screen.dart';
 import 'screens/activation_screen.dart';
 import 'utils/backup_helper.dart';
 
-// మీ అసలు అడ్మిన్ ఫోన్ నెంబర్ ఇక్కడ ఇవ్వండి
 const String adminPhoneNumber = "8985498085";
+String? startupErrorMessage;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await loadFinanceDataFromPrefs();
-  await loadAllAssetsLoansData();
 
-  bool isAllowed = await checkAppAccessPermission();
+  try {
+    await loadFinanceDataFromPrefs();
+  } catch (e) {
+    startupErrorMessage = "Finance load error: $e";
+  }
+
+  try {
+    await loadAllAssetsLoansData();
+  } catch (e) {
+    startupErrorMessage = (startupErrorMessage == null)
+        ? "Assets/Loans load error: $e"
+        : "$startupErrorMessage\nAssets/Loans load error: $e";
+  }
+
+  bool isAllowed = false;
+  try {
+    isAllowed = await checkAppAccessPermission();
+  } catch (e) {
+    startupErrorMessage = (startupErrorMessage == null)
+        ? "Permission check error: $e"
+        : "$startupErrorMessage\nPermission check error: $e";
+  }
 
   runApp(FinanceApp(isAllowed: isAllowed));
 }
 
 Future<bool> checkAppAccessPermission() async {
-  // ---------------------------------------------------------
-  // 🛠️ లాప్‌టాప్ టెస్టింగ్ మోడ్:
-  // ప్రస్తుతం టెస్ట్ చేయడానికి 'true' లో ఉంచండి.
-  // మీరు ఫైనల్ APK బిల్డ్ చేసేటప్పుడు దీన్ని 'false' చేయాలి!
-  // ---------------------------------------------------------
   bool isTestingOnLaptop = true;
   if (isTestingOnLaptop) {
     return true;
@@ -37,17 +51,15 @@ Future<bool> checkAppAccessPermission() async {
 
   final prefs = await SharedPreferences.getInstance();
 
-  // అడ్మిన్ ఫోన్ నెంబర్ చెకింగ్
   String? savedPhone = prefs.getString('user_phone');
   if (savedPhone == adminPhoneNumber) {
     return true;
   }
 
-  // సాధారణ యూజర్ కోసం ఆక్టివేషన్ & ఎక్స్‌పైరీ చెకింగ్
   bool isActivated = prefs.getBool('is_activated') ?? false;
   if (!isActivated) return false;
 
-  String? expiryStr = prefs.getString('app_expiry_date'); // Format: DDMMYYYY
+  String? expiryStr = prefs.getString('app_expiry_date');
   if (expiryStr == null) return false;
 
   try {
@@ -58,9 +70,9 @@ Future<bool> checkAppAccessPermission() async {
 
     DateTime now = DateTime.now();
     if (now.isBefore(expiryDate)) {
-      return true; // గడువు ఉంది
+      return true;
     } else {
-      return false; // గడువు ముగిసింది
+      return false;
     }
   } catch (e) {
     return false;
@@ -98,7 +110,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
     await loadExpenseScreenData();
     await loadIncomeScreenData();
     await loadAllAssetsLoansData();
-    // మిగతా స్క్రీన్‌ల లోడ్ ఫంక్షన్లు వచ్చినప్పుడు ఇక్కడ కలపండి
     if (mounted) {
       setState(() {});
     }
@@ -182,11 +193,23 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
-          // Backup & Restore Bar (Home Dashboard Top)
+          if (startupErrorMessage != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade100,
+                border: Border.all(color: Colors.amber.shade800),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                startupErrorMessage!,
+                style: const TextStyle(color: Colors.black87, fontSize: 13),
+              ),
+            ),
+          ],
           _buildBackupRestoreSection(),
           const SizedBox(height: 16),
-
-          // 1. Income Management Card
           _buildDashboardCard(
             context,
             title: 'Income Management',
@@ -196,8 +219,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             destination: const IncomeScreen(),
           ),
           const SizedBox(height: 16),
-
-          // 2. Expence Tracking Card
           _buildDashboardCard(
             context,
             title: 'Expence Tracking',
@@ -207,8 +228,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             destination: const ExpenceScreen(),
           ),
           const SizedBox(height: 16),
-
-          // 3. Shopping Management Card
           _buildDashboardCard(
             context,
             title: 'Shopping Management',
@@ -218,8 +237,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             destination: const ShoppingScreen(),
           ),
           const SizedBox(height: 16),
-
-          // 4. Assets & Liabilities Card
           _buildDashboardCard(
             context,
             title: 'Assets & Liabilities',
@@ -229,8 +246,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             destination: const AssetsLiabilitiesScreen(),
           ),
           const SizedBox(height: 16),
-
-          // 5. Financial Reports Card
           _buildDashboardCard(
             context,
             title: 'Financial Reports',
@@ -241,8 +256,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             destination: const ReportsScreen(),
           ),
           const SizedBox(height: 16),
-
-          // 6. Reminders & General Information Card
           _buildDashboardCard(
             context,
             title: 'Reminders & General Info',
@@ -252,8 +265,6 @@ class _MainDashboardScreenState extends State<MainDashboardScreen> {
             destination: const RemindersInfoScreen(),
           ),
           const SizedBox(height: 16),
-
-          // 7. Fixed Expenses & Fees Tracker Card
           _buildDashboardCard(
             context,
             title: 'Fixed Expenses & Fees Tracker',
