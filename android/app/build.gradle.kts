@@ -1,36 +1,40 @@
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
+plugins {
+    id("com.android.application")
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id("dev.flutter.flutter-gradle-plugin")
+}
+
+android {
+    namespace = "com.example.temp_project"
+    compileSdk = 36
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-}
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+    defaultConfig {
+        applicationId = "com.example.temp_project"
+        minSdk = flutter.minSdkVersion
+        targetSdk = 36
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
 
-subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
-}
-subprojects {
-    project.evaluationDependsOn(":app")
-}
-subprojects {
-    afterEvaluate {
-        val androidExt = extensions.findByName("android")
-        if (androidExt != null) {
-            try {
-                val method = androidExt.javaClass.getMethod("setCompileSdk", Int::class.javaPrimitiveType)
-                method.invoke(androidExt, 36)
-            } catch (_: Exception) {
-            }
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 }
 
-tasks.register<Delete>("clean") {
-    delete(rootProject.layout.buildDirectory)
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+flutter {
+    source = "../.."
 }
