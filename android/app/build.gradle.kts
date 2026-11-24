@@ -4,7 +4,7 @@
 }
 
 android {
-    namespace = "com.example.temp_project"
+    namespace = "com.abhi.finance_app"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -14,7 +14,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.temp_project"
+        applicationId = "com.abhi.finance_app"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode
@@ -24,6 +24,8 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
