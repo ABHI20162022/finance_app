@@ -1,5 +1,4 @@
-Kotlin
-allprojects {
+﻿allprojects {
     repositories {
         google()
         mavenCentral()
