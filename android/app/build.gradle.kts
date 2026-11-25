@@ -15,8 +15,8 @@ android {
 
     defaultConfig {
         applicationId = "com.abhi.finance_app"
-        minSdk = flutter.minSdkVersion
-        targetSdk = 36
+        minSdk = 21
+        targetSdk = 35
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
